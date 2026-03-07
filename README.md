@@ -8,7 +8,7 @@
 
 插件版添加了**分页功能**，这样追番很多时能节约流量，加快速度。追番列表与追番日历功能都可以自己选择要不要开启，在插件里设置就好。
 
-使用方法：去 GitHub 上下载插件：[Izumiko/PandaBangumi-Typecho-Plugin](https://github.com/Izumiko/PandaBangumi-Typecho-Plugin)
+使用方法：去 GitHub 上下载插件：[mikusaa/PandaBangumi-Typecho-Plugin](https://github.com/mikusaa/PandaBangumi-Typecho-Plugin)
 
 解压后把文件夹改名为 `PandaBangumi` ，上传到服务器 `usr/plugins` 目录下，在 Typecho 后台启用本插件，填写 ID（即用户主页链接后的那串数字），设置一下每页展示的数量。
 
