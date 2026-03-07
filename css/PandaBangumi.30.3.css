@@ -1,0 +1,616 @@
+/* 追番列表 */
+.bgm-collection {
+    display: flex;
+    flex-flow: row wrap;
+    margin: 0 auto 0 -15px;
+    width: calc(100% + 15px);
+}
+
+.bgm-item {
+    display: block;
+    margin-left: 15px;
+    margin-bottom: 15px;
+    position: relative;
+    box-shadow: 0 0 6px rgba(0, 0, 0, 0.2);
+    transition: 0.3s ease box-shadow;
+    border: none !important;
+    text-decoration: none !important;
+    background: #fff;
+}
+
+.bgm-item:hover {
+    box-shadow: 0 6px 12px rgba(0, 0, 0, 0.2);
+    border: none !important;
+    text-decoration: none !important;
+}
+
+@media screen and (max-width: 768px) {
+    .bgm-item {
+        width: calc(33.33333333333% - 15px)
+    }
+}
+
+@media screen and (max-width: 450px) {
+    .bgm-item {
+        width: calc(50% - 15px)
+    }
+}
+
+@media screen and (min-width: 768px) {
+    .bgm-item {
+        width: calc(25% - 15px)
+    }
+
+    .bgm-calendar {
+        gap: 0.5rem;
+    }
+
+    .cal-day-row {
+        flex-direction: row;
+    }
+
+    .cal-day-row-header {
+        width: 3.5rem;
+        border-bottom: none;
+        border-right: 1px solid #edf2f7;
+    }
+
+    .cal-day-row-header h3 {
+        writing-mode: vertical-rl;
+        text-orientation: mixed;
+        letter-spacing: 0.2rem; /* 增加字符间距，更美观 */
+        font-size: 1rem; /* 调整字号以适应容器 */
+    }
+}
+
+.bgm-item-thumb {
+    width: 100%;
+    padding-top: 143%;
+    background-position: center;
+    background-repeat: no-repeat;
+    background-size: cover;
+}
+
+.bgm-item-info {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    padding: 0.5rem;
+    overflow: hidden;
+}
+
+.bgm-item-info > * {
+    display: block;
+    text-align: center;
+    margin: 0 auto;
+    max-width: 100%;
+}
+
+.bgm-item-title {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    font-size: 0.9rem;
+    color: #333
+}
+
+.bgm-item-title:not(.main) {
+    color: #5e5b5c;
+}
+
+.bgm-item-title.main {
+    font-size: 1.2rem;
+}
+
+.bgm-item-statusBar-container {
+    margin: 0.2rem auto;
+    padding: 0.2em;
+    background: rgba(0, 0, 0, 0.1);
+    width: 100%;
+    position: relative;
+    z-index: 0;
+    color: #333;
+}
+
+.bgm-item-statusBar {
+    position: absolute;
+    height: 100%;
+    background: lightpink;
+    left: 0;
+    top: 0;
+    z-index: -1;
+}
+
+/* 追番日历 - 标签页新样式 */
+.bgm-calendar {
+    background-color: #fff;
+    border-radius: 8px;
+    padding: 1.2rem;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+    margin: 30px auto;
+}
+
+/* 标签页容器 (主要修改区域) */
+.cal-tabs {
+    display: flex;
+    flex-wrap: nowrap; /* 从 wrap 修改为 nowrap，防止标签换行 */
+    overflow-x: auto; /* 允许内容横向滚动 */
+    border-bottom: 2px solid #f0f2f5;
+    margin-bottom: 1rem;
+    gap: 0.5rem;
+    -webkit-overflow-scrolling: touch; /* 在iOS上提供更平滑的滚动体验 */
+    scrollbar-width: none; /* 隐藏 Firefox 的滚动条 */
+    -ms-overflow-style: none; /* 隐藏 IE 和 Edge 的滚动条 */
+}
+
+/* 隐藏 Webkit 浏览器 (Chrome, Safari) 的滚动条 */
+.cal-tabs::-webkit-scrollbar {
+    display: none;
+}
+
+
+/* 标签按钮 */
+.cal-tab-button {
+    padding: 0.8rem 1.2rem;
+    font-size: 1rem;
+    font-weight: 500;
+    color: #555;
+    background: none;
+    border: none;
+    cursor: pointer;
+    position: relative;
+    transition: color 0.3s ease;
+    border-bottom: 3px solid transparent;
+    margin-bottom: -2px; /* 让边框和容器边框重合 */
+    flex-shrink: 0; /* 防止按钮在 flex 布局中被压缩 */
+}
+
+.cal-tab-button:hover {
+    color: #000;
+}
+
+.cal-tab-button.active {
+    color: #E800A4; /* 主题色 */
+    border-bottom-color: #E800A4;
+}
+
+/* 内容面板容器 */
+.cal-panels {
+    position: relative;
+}
+
+/* 单个内容面板 */
+.cal-panel {
+    display: none; /* 默认隐藏 */
+    grid-template-columns: repeat(auto-fill, minmax(110px, 1fr)); /* 响应式网格布局 */
+    gap: 1rem;
+    animation: fadeIn 0.5s ease;
+}
+
+.cal-panel.active {
+    display: grid; /* 激活时显示为网格 */
+}
+
+@keyframes fadeIn {
+    from { opacity: 0; transform: translateY(10px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+/* 面板内的番剧卡片 */
+.cal-bangumi-item {
+    position: relative;
+    width: 100%;
+    aspect-ratio: 2 / 3; /* 经典的封面比例 */
+    background-size: cover;
+    background-position: center;
+    border-radius: 6px;
+    overflow: hidden;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+    transition: transform 0.3s ease, box-shadow 0.3s ease;
+}
+
+.cal-bangumi-item:hover {
+    transform: translateY(-5px) scale(1.05);
+    box-shadow: 0 6px 16px rgba(0, 0, 0, 0.15);
+}
+
+.cal-bangumi-title-overlay {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    background: linear-gradient(to top, rgba(0,0,0,0.8), transparent);
+    color: white;
+    font-size: 12px;
+    padding: 1.5rem 0.5rem 0.5rem;
+    text-align: center;
+    text-shadow: 0 1px 3px rgba(0, 0, 0, 0.7);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    transition: opacity 0.3s ease;
+}
+
+.cal-bangumi-item:hover .cal-bangumi-title-overlay {
+    opacity: 0; /* 鼠标悬浮时隐藏标题，以完整展示封面 */
+}
+
+.cal-no-item {
+    color: #a0aec0;
+    font-size: 1rem;
+    text-align: center;
+    padding: 2rem 0;
+    grid-column: 1 / -1; /* 占满整行 */
+}
+
+/* --- 全新番剧卡片样式 (最终版：加宽、单行评分) --- */
+.yue .bgm-card {
+    font-family: "Noto Sans SC", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    display: block;
+    max-width: 600px;
+    width: 100%;
+    margin: 30px auto !important;
+    background: #fff;
+    border-radius: 12px;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.08);
+    border: 1px solid #e5e7eb;
+    overflow: hidden;
+    transition: all 0.3s ease;
+}
+
+.yue .bgm-card:hover {
+    transform: translateY(-4px);
+    box-shadow: 0 10px 24px rgba(0, 0, 0, 0.1);
+}
+
+.yue .bgm-card .bgm-card-link-wrapper {
+    display: flex !important;
+    text-decoration: none !important;
+    color: inherit;
+    align-items: stretch; 
+    border: none !important;
+}
+
+.yue .bgm-card .bgm-card-poster {
+    position: relative;
+    flex-shrink: 0 !important;
+    width: 160px !important;
+    height: auto;
+    overflow: hidden;
+}
+
+.yue .bgm-card .bgm-card-poster::before {
+    content: '';
+    display: block;
+    padding-top: 143%;
+}
+
+.yue .bgm-card .bgm-card-poster img {
+    position: absolute !important;
+    top: 0 !important;
+    left: 0 !important;
+    width: 100% !important;
+    height: 100% !important;
+    object-fit: cover !important;
+    border-radius: 4px;
+    margin: 0 !important;
+    padding: 0 !important;
+}
+
+.yue .bgm-card .bgm-card-content {
+    padding: 15px 20px;
+    display: flex;
+    flex-direction: column;
+    flex-grow: 1;
+    min-width: 0; 
+}
+
+.yue .bgm-card .bgm-card-title {
+    font-size: 1.3em;
+    font-weight: 700;
+    color: #111827;
+    margin: 0;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.yue .bgm-card .bgm-card-subtitle {
+    font-size: 0.9em;
+    color: #4b5563;
+    margin: 2px 0 0 0;
+    min-height: 1.2em;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.yue .bgm-card .bgm-card-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+    margin-top: 10px;
+    font-size: 0.85em;
+    color: #6b7280;
+}
+
+.yue .bgm-card .bgm-card-meta .meta-item {
+    display: flex;
+    align-items: center;
+}
+
+.yue .bgm-card .bgm-card-tags {
+    margin-top: 10px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+}
+
+.yue .bgm-card .bgm-card-tag {
+    background-color: #fee2e2;
+    color: #ef4444;
+    padding: 2px 8px;
+    border-radius: 12px;
+    font-size: 0.75em;
+    font-weight: 500;
+}
+
+.yue .bgm-card .bgm-card-rating-area {
+    margin-top: auto;
+    padding-top: 10px;
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+}
+
+.yue .bgm-card .bgm-card-score {
+    font-size: 2em;
+    font-weight: bold;
+    color: #f59e0b;
+    line-height: 1;
+}
+
+.yue .bgm-card .bgm-card-score-text {
+    font-size: 1.1em;
+    font-weight: 500;
+    color: #333;
+    line-height: 1.2;
+}
+
+.yue .bgm-card .bgm-card-rating-count {
+    font-size: 0.85em;
+    color: #888;
+}
+
+/* --- 图标定义 --- */
+.meta-icon {
+    display: inline-block;
+    width: 1em;
+    height: 1em;
+    margin-right: 6px;
+    background-color: currentColor;
+    -webkit-mask-size: contain;
+    mask-size: contain;
+    -webkit-mask-repeat: no-repeat;
+    mask-repeat: no-repeat;
+    -webkit-mask-position: center;
+    mask-position: center;
+    flex-shrink: 0;
+}
+
+.icon-star {
+    -webkit-mask-image: url('data:image/svg+xml;charset=UTF-8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12,17.27L18.18,21L16.54,13.97L22,9.24L14.81,8.62L12,2L9.19,8.62L2,9.24L7.45,13.97L5.82,21L12,17.27Z"/></svg>');
+    mask-image: url('data:image/svg+xml;charset=UTF-8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12,17.27L18.18,21L16.54,13.97L22,9.24L14.81,8.62L12,2L9.19,8.62L2,9.24L7.45,13.97L5.82,21L12,17.27Z"/></svg>');
+}
+
+.icon-trophy {
+    -webkit-mask-image: url('data:image/svg+xml;charset=UTF-8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20.2,2H19.5H4.5H3.8H2V11C2,12 3,13 4,13H7.2C7.6,14.9 8.6,16.6 11,16.9V19C8,19.2 8,20.3 8,21H16C16,20.3 16,19.2 13,19V16.9C15.4,16.6 16.4,14.9 16.8,13H20C21,13 22,12 22,11V2H20.2M4,11V4H7V11H4M17,11V4H20V11H17Z"/></svg>');
+    mask-image: url('data:image/svg+xml;charset=UTF-8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20.2,2H19.5H4.5H3.8H2V11C2,12 3,13 4,13H7.2C7.6,14.9 8.6,16.6 11,16.9V19C8,19.2 8,20.3 8,21H16C16,20.3 16,19.2 13,19V16.9C15.4,16.6 16.4,14.9 16.8,13H20C21,13 22,12 22,11V2H20.2M4,11V4H7V11H4M17,11V4H20V11H17Z"/></svg>');
+}
+
+.icon-calendar {
+    -webkit-mask-image: url('data:image/svg+xml;charset=UTF-8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19,19H5V8H19M19,3H18V1H16V3H8V1H6V3H5C3.89,3 3,3.9 3,5V19A2,2 0 0,0 5,21H19A2,2 0 0,0 21,19V5A2,2 0 0,0 19,3M16.53,11.06L15.47,10L10.59,14.88L8.47,12.76L7.41,13.82L10.59,17L16.53,11.06Z"/></svg>');
+    mask-image: url('data:image/svg+xml;charset=UTF-8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19,19H5V8H19M19,3H18V1H16V3H8V1H6V3H5C3.89,3 3,3.9 3,5V19A2,2 0 0,0 5,21H19A2,2 0 0,0 21,19V5A2,2 0 0,0 19,3M16.53,11.06L15.47,10L10.59,14.88L8.47,12.76L7.41,13.82L10.59,17L16.53,11.06Z"/></svg>');
+}
+
+.icon-tv {
+    -webkit-mask-image: url('data:image/svg+xml;charset=UTF-8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M21,3H3C1.89,3 1,3.89 1,5V17A2,2 0 0,0 3,19H8V21H16V19H21A2,2 0 0,0 23,17V5C23,3.89 22.1,3 21,3M21,17H3V5H21V17Z"/></svg>');
+    mask-image: url('data:image/svg+xml;charset=UTF-8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M21,3H3C1.89,3 1,3.89 1,5V17A2,2 0 0,0 3,19H8V21H16V19H21A2,2 0 0,0 23,17V5C23,3.89 22.1,3 21,3M21,17H3V5H21V17Z"/></svg>');
+}
+
+.icon-list {
+    -webkit-mask-image: url('data:image/svg+xml;charset=UTF-8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9,5V9H21V5M9,19H21V15H9M9,14H21V10H9M4,9H8V5H4M4,19H8V15H4M4,14H8V10H4V14Z"/></svg>');
+    mask-image: url('data:image/svg+xml;charset=UTF-8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9,5V9H21V5M9,19H21V15H9M9,14H21V10H9M4,9H8V5H4M4,19H8V15H4M4,14H8V10H4V14Z"/></svg>');
+}
+
+.icon-collection {
+    -webkit-mask-image: url('data:image/svg+xml;charset=UTF-8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12,5.5A3.5,3.5 0 0,1 15.5,9A3.5,3.5 0 0,1 12,12.5A3.5,3.5 0 0,1 8.5,9A3.5,3.5 0 0,1 12,5.5M5,8C5.56,8 6.08,8.15 6.53,8.42C6.38,8.8 6.28,9.21 6.24,9.65C5.83,9.26 5.44,9 5,9C5,8.67 5,8.34 5,8M19,8C18.66,8 18.33,8 18,8C18,8.34 18,8.67 18,9C17.56,9 17.17,9.26 16.76,9.65C16.72,9.21 16.62,8.8 16.47,8.42C16.92,8.15 17.44,8 18,8C18.34,8 18.67,8 19,8M12,14.5C14.67,14.5 20,15.84 20,18.5V20H4V18.5C4,15.84 9.33,14.5 12,14.5M4,18.5C4,18.5 4,18.5 4,18.5V18.5M12,3.5A5.5,5.5 0 0,0 6.5,9C6.5,10.12 6.94,11.13 7.64,11.9C6.16,13.24 4,14.62 4,17.5V18H20V17.5C20,14.62 17.84,13.24 16.36,11.9C17.06,11.13 17.5,10.12 17.5,9A5.5,5.5 0 0,0 12,3.5Z"/></svg>');
+    mask-image: url('data:image/svg+xml;charset=UTF-8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12,5.5A3.5,3.5 0 0,1 15.5,9A3.5,3.5 0 0,1 12,12.5A3.5,3.5 0 0,1 8.5,9A3.5,3.5 0 0,1 12,5.5M5,8C5.56,8 6.08,8.15 6.53,8.42C6.38,8.8 6.28,9.21 6.24,9.65C5.83,9.26 5.44,9 5,9C5,8.67 5,8.34 5,8M19,8C18.66,8 18.33,8 18,8C18,8.34 18,8.67 18,9C17.56,9 17.17,9.26 16.76,9.65C16.72,9.21 16.62,8.8 16.47,8.42C16.92,8.15 17.44,8 18,8C18.34,8 18.67,8 19,8M12,14.5C14.67,14.5 20,15.84 20,18.5V20H4V18.5C4,15.84 9.33,14.5 12,14.5M4,18.5C4,18.5 4,18.5 4,18.5V18.5M12,3.5A5.5,5.5 0 0,0 6.5,9C6.5,10.12 6.94,11.13 7.64,11.9C6.16,13.24 4,14.62 4,17.5V18H20V17.5C20,14.62 17.84,13.24 16.36,11.9C17.06,11.13 17.5,10.12 17.5,9A5.5,5.5 0 0,0 12,3.5Z"/></svg>');
+}
+
+/* === 新增：手机端响应式布局 === */
+@media screen and (max-width: 767px) {
+    .yue .bgm-card {
+        max-width: 90%; /* 手机上卡片宽度占屏幕90% */
+    }
+
+    .yue .bgm-card .bgm-card-link-wrapper {
+        flex-direction: column !important; /* 核心：改为垂直布局 */
+    }
+
+    .yue .bgm-card .bgm-card-poster {
+        width: 100% !important; /* 封面宽度占满 */
+    }
+    
+    .yue .bgm-card .bgm-card-poster::before {
+        /* 在水平封面上，高宽比通常小于1，这里模拟一个常见的电影海报横版比例 */
+        padding-top: 56.25% !important; /* 16:9 比例 */
+    }
+    
+    .yue .bgm-card .bgm-card-poster img {
+        border-radius: 4px 4px 0 0; /* 仅保留顶部圆角 */
+    }
+    
+    .yue .bgm-card .bgm-card-content {
+        padding: 15px; /* 调整内边距 */
+    }
+    
+    .yue .bgm-card .bgm-card-title {
+        font-size: 1.2em;
+    }
+}
+
+
+/* 加载状态与错误状态 */
+.bgm-card .loading-state,
+.bgm-card .error-state {
+    width: 100%;
+    text-align: center;
+    color: #999;
+    padding: 50px 0;
+    font-size: 1em;
+}
+
+.bgm-card .error-state {
+    color: #e53935;
+}
+
+.loader {
+    text-align: center;
+    padding: 0.3em;
+    width: 6.5em;
+    margin: 1.2rem auto;
+    border: 3px solid rgba(0, 0, 0, 0.2);
+    color: #333;
+    transition: 0.3s ease all;
+    cursor: pointer;
+    white-space: nowrap;
+}
+
+body.theme-dark .loader {
+    border: 3px solid rgba(255, 255, 255, 0.2);
+    color: #b0b0b0
+}
+
+.loader:hover,
+body.theme-dark .loader:hover {
+    border: 3px solid lightpink;
+    color: lightpink;
+}
+
+.dot {
+    width: 8px;
+    height: 8px;
+    background: lightpink;
+    border-radius: 100%;
+    display: inline-block;
+    -webkit-animation: slide 1s infinite;
+    animation: slide 1s infinite;
+    margin: 0 10px
+}
+
+.dot:nth-child(1) {
+    -webkit-animation-delay: .1s;
+    animation-delay: .1s;
+}
+
+.dot:nth-child(2) {
+    -webkit-animation-delay: .2s;
+    animation-delay: .2s;
+}
+
+.dot:nth-child(3) {
+    -webkit-animation-delay: .3s;
+    animation-delay: .3s;
+}
+
+@-webkit-keyframes slide {
+    0% {
+        -webkit-transform: scale(1);
+        transform: scale(1)
+    }
+    50% {
+        opacity: .3;
+        -webkit-transform: scale(2);
+        transform: scale(2)
+    }
+    100% {
+        -webkit-transform: scale(1);
+        transform: scale(1)
+    }
+}
+
+@keyframes slide {
+    0% {
+        -webkit-transform: scale(1);
+        transform: scale(1)
+    }
+    50% {
+        opacity: .3;
+        -webkit-transform: scale(2);
+        transform: scale(2)
+    }
+    100% {
+        -webkit-transform: scale(1);
+        transform: scale(1)
+    }
+}
+
+
+/* --- 夜间模式样式追加 --- */
+
+/* 日历 - 夜间模式 */
+body.theme-dark .bgm-calendar {
+    background-color: #1c1c1c; 
+    border: 1px solid #333333;
+    box-shadow: none;
+}
+
+body.theme-dark .cal-tabs {
+    border-bottom-color: #333333;
+}
+
+body.theme-dark .cal-tab-button {
+    color: #a9a9a9;
+}
+
+body.theme-dark .cal-tab-button:hover,
+body.theme-dark .cal-tab-button.active {
+    color: #ffffff;
+    border-bottom-color: #ffffff;
+}
+
+body.theme-dark .cal-bangumi-item {
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.6);
+}
+
+body.theme-dark .cal-bangumi-item:hover {
+    box-shadow: 0 6px 16px rgba(0, 0, 0, 0.7);
+}
+
+body.theme-dark .cal-no-item {
+    color: #888888;
+}
+
+/* 番剧卡片 - 夜间模式 */
+body.theme-dark .yue .bgm-card {
+    background-color: #2c2c2e;
+    border-color: rgba(255, 255, 255, 0.1);
+}
+body.theme-dark .yue .bgm-card .bgm-card-title {
+    color: #f5f5f7;
+}
+body.theme-dark .yue .bgm-card .bgm-card-subtitle,
+body.theme-dark .yue .bgm-card .bgm-card-meta,
+body.theme-dark .yue .bgm-card .bgm-card-rating-count {
+    color: #aeb1b8;
+}
+body.theme-dark .yue .bgm-card .bgm-card-score-text {
+    color: #d1d1d6;
+}
+body.theme-dark .yue .bgm-card .bgm-card-tag {
+    background-color: #4a1d1d;
+    color: #f87171;
+}
+
