@@ -159,6 +159,12 @@ async function loadCalendar() {
         calContainer.appendChild(tabs);
         calContainer.appendChild(panels);
 
+        // 将当天的标签页滚动到可视区域（移动端横向滚动时）
+        const activeTab = tabs.querySelector('.cal-tab-button.active');
+        if (activeTab) {
+            activeTab.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' });
+        }
+
         // 3. 添加标签页点击事件逻辑
         tabs.addEventListener('click', (e) => {
             if (e.target.matches('.cal-tab-button')) {

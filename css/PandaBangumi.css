@@ -115,18 +115,14 @@
 .cal-tabs {
     display: flex;
     flex-wrap: nowrap;
-    /* 从 wrap 修改为 nowrap，防止标签换行 */
     overflow-x: auto;
-    /* 允许内容横向滚动 */
+    justify-content: center;
     border-bottom: 2px solid #f0f2f5;
     margin-bottom: 1rem;
     gap: 0.5rem;
     -webkit-overflow-scrolling: touch;
-    /* 在iOS上提供更平滑的滚动体验 */
     scrollbar-width: none;
-    /* 隐藏 Firefox 的滚动条 */
     -ms-overflow-style: none;
-    /* 隐藏 IE 和 Edge 的滚动条 */
 }
 
 /* 隐藏 Webkit 浏览器 (Chrome, Safari) 的滚动条 */
