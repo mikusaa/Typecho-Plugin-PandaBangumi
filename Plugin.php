@@ -21,11 +21,11 @@ if (!defined('__TYPECHO_ROOT_DIR__')) {
  *
  * @package PandaBangumi
  * @author 熊猫小A
- * @version 2.5
+ * @version 3.0.0
  * @link https://www.imalan.cn
  */
 
-define('PandaBangumi_Plugin_VERSION', '2.5');
+define('PandaBangumi_Plugin_VERSION', '3.0.0');
 
 class Plugin implements PluginInterface
 {
@@ -126,7 +126,7 @@ class Plugin implements PluginInterface
         echo '<link rel="stylesheet" href="';
         Options::alloc()->pluginUrl('/PandaBangumi/css/PandaBangumi.30.3.css');
         echo '?v=' . PandaBangumi_Plugin_VERSION . '" />';
-        echo '<script>var bgmBase="';
+        echo '<script>const bgmBase="';
         Options::alloc()->index('/PandaBangumi');
         echo '"</script>';
     }

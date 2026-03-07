@@ -49,6 +49,9 @@ class BangumiAPI
         }
 
         $data = json_decode($json, true);
+        if (!is_array($data) || !isset($data['total'])) {
+            return array();
+        }
 
         $collections = array();
 
@@ -189,17 +192,15 @@ class BangumiAPI
         $total = count($data);
 
         if ($From < 0 || $From > $total) {
-            echo json_encode(array());
-        } else {
-            $end = min($From + $PageSize, $total);
-            $out = array();
-            for ($index = $From; $index < $end; $index++) {
-                $out[] = $data[$index];
-            }
-            return json_encode($out);
+            return json_encode(array());
         }
 
-        return json_encode(array());
+        $end = min($From + $PageSize, $total);
+        $out = array();
+        for ($index = $From; $index < $end; $index++) {
+            $out[] = $data[$index];
+        }
+        return json_encode($out);
     }
 
     /**
@@ -242,17 +243,15 @@ class BangumiAPI
         $total = count($data);
 
         if ($From < 0 || $From > $total) {
-            echo json_encode(array());
-        } else {
-            $end = min($From + $PageSize, $total);
-            $out = array();
-            for ($index = $From; $index < $end; $index++) {
-                $out[] = $data[$index];
-            }
-            return json_encode($out);
+            return json_encode(array());
         }
 
-        return json_encode(array());
+        $end = min($From + $PageSize, $total);
+        $out = array();
+        for ($index = $From; $index < $end; $index++) {
+            $out[] = $data[$index];
+        }
+        return json_encode($out);
     }
 
     /**

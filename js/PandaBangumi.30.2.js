@@ -100,7 +100,7 @@ async function loadCalendar() {
     try {
         const response = await fetch(url);
         const data = await response.json();
-        
+
         const todayId = getTodayId();
         calContainer.innerHTML = ''; // 清空旧内容
 
@@ -142,7 +142,7 @@ async function loadCalendar() {
                     bangumiItem.title = title;
                     bangumiItem.className = 'cal-bangumi-item';
                     bangumiItem.style.backgroundImage = `url('${item.img}')`;
-                    
+
                     const titleOverlay = document.createElement('span');
                     titleOverlay.className = 'cal-bangumi-title-overlay';
                     titleOverlay.textContent = title;
@@ -163,7 +163,7 @@ async function loadCalendar() {
         tabs.addEventListener('click', (e) => {
             if (e.target.matches('.cal-tab-button')) {
                 const dayId = e.target.dataset.dayId;
-                
+
                 // 移除所有 active 类
                 tabs.querySelectorAll('.cal-tab-button').forEach(btn => btn.classList.remove('active'));
                 panels.querySelectorAll('.cal-panel').forEach(pnl => pnl.classList.remove('active'));
@@ -189,10 +189,10 @@ async function loadCalendar() {
 async function loadBgmCard() {
     const cards = document.querySelectorAll('.bgm-card');
 
-    cards.forEach(card => {
+    for (const card of cards) {
         const id = card.getAttribute('data-id');
-        if (id) renderCard(id, card);
-    })
+        if (id) await renderCard(id, card);
+    }
 }
 
 /**
