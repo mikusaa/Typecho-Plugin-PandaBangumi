@@ -99,6 +99,9 @@ class BangumiAPI
         }
 
         $data = json_decode($json, true);
+        if (!is_array($data)) {
+            return array();
+        }
 
         $calendar = array();
 
@@ -138,7 +141,7 @@ class BangumiAPI
         }
 
         $content = json_decode(file_get_contents($FilePath), true);
-        if (!array_key_exists('time', $content) || $content['time'] < 1) {
+        if (!is_array($content) || !array_key_exists('time', $content) || $content['time'] < 1) {
             return -1;
         }
 

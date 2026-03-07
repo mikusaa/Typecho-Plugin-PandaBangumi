@@ -5,8 +5,6 @@ namespace TypechoPlugin\PandaBangumi;
 use Typecho\Plugin\PluginInterface;
 use Typecho\Plugin\Exception as PluginException;
 use Typecho\Widget\Helper\Form;
-use Typecho\Widget\Helper\Form\Element\Radio;
-use Typecho\Widget\Helper\Form\Element\Checkbox;
 use Typecho\Widget\Helper\Form\Element\Text;
 use Widget\Options;
 use Utils\Helper;
@@ -21,11 +19,11 @@ if (!defined('__TYPECHO_ROOT_DIR__')) {
  *
  * @package PandaBangumi
  * @author 熊猫小A
- * @version 3.0.0
+ * @version 3.0.1
  * @link https://www.imalan.cn
  */
 
-define('PandaBangumi_Plugin_VERSION', '3.0.0');
+define('PandaBangumi_Plugin_VERSION', '3.0.1');
 
 class Plugin implements PluginInterface
 {
@@ -120,11 +118,8 @@ class Plugin implements PluginInterface
      */
     public static function header(): void
     {
-        $config = Options::alloc()->plugin('PandaBangumi');
-
-
         echo '<link rel="stylesheet" href="';
-        Options::alloc()->pluginUrl('/PandaBangumi/css/PandaBangumi.30.3.css');
+        Options::alloc()->pluginUrl('/PandaBangumi/css/PandaBangumi.css');
         echo '?v=' . PandaBangumi_Plugin_VERSION . '" />';
         echo '<script>const bgmBase="';
         Options::alloc()->index('/PandaBangumi');
@@ -140,7 +135,7 @@ class Plugin implements PluginInterface
     public static function footer(): void
     {
         echo '<script type="text/javascript" src="';
-        Options::alloc()->pluginUrl('/PandaBangumi/js/PandaBangumi.30.2.js');
+        Options::alloc()->pluginUrl('/PandaBangumi/js/PandaBangumi.js');
         echo '?v=' . PandaBangumi_Plugin_VERSION . '"></script>';
     }
 }

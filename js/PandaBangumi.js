@@ -223,6 +223,17 @@ async function renderCard(subjectId, cardElement) {
 }
 
 /**
+ * HTML 转义，防止 XSS
+ * @param {string} str
+ * @returns {string}
+ */
+function escapeHtml(str) {
+    const div = document.createElement('div');
+    div.textContent = str;
+    return div.innerHTML;
+}
+
+/**
  * 从 infobox 数组中查找特定键的值
  * @param {Array} infobox
  * @param {string} key
@@ -267,8 +278,8 @@ function getScoreDescriptionJs(score) {
  */
 function buildCardHTML(data, subjectId) {
     // 从 API 数据中提取信息
-    const nameCN = data.name_cn || data.name;
-    const nameOriginal = data.name_cn ? data.name : '';
+    const nameCN = escapeHtml(data.name_cn || data.name);
+    const nameOriginal = data.name_cn ? escapeHtml(data.name) : '';
     const posterUrl = (data.images && data.images.large) || '';
     const bangumiUrl = `https://bgm.tv/subject/${subjectId}`;
 
