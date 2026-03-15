@@ -121,9 +121,9 @@ class Plugin implements PluginInterface
         echo '<link rel="stylesheet" href="';
         Options::alloc()->pluginUrl('/PandaBangumi/css/PandaBangumi.css');
         echo '?v=' . PandaBangumi_Plugin_VERSION . '" />';
-        echo '<script>const bgmBase="';
+        echo '<script>window.bgmBase="';
         Options::alloc()->index('/PandaBangumi');
-        echo '"</script>';
+        echo '";</script>';
     }
 
     /**
