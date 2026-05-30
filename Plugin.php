@@ -19,11 +19,11 @@ if (!defined('__TYPECHO_ROOT_DIR__')) {
  *
  * @package PandaBangumi
  * @author 熊猫小A
- * @version 3.0.2
+ * @version 3.0.3
  * @link https://www.imalan.cn
  */
 
-define('PandaBangumi_Plugin_VERSION', '3.0.2');
+define('PandaBangumi_Plugin_VERSION', '3.0.3');
 
 class Plugin implements PluginInterface
 {
@@ -36,6 +36,10 @@ class Plugin implements PluginInterface
      */
     public static function activate(): void
     {
+        if (PHP_VERSION_ID < 80000) {
+            throw new PluginException('启用失败，PandaBangumi 需运行在 PHP 8.0 或更高版本。');
+        }
+
         // 检查是否存在对应扩展
         if (!extension_loaded('openssl')) {
             throw new PluginException('启用失败，PHP 需启用 OpenSSL 扩展。');
@@ -88,7 +92,7 @@ class Plugin implements PluginInterface
         $ID = new Text('ID', NULL, '', _t('用户 ID'), _t('填写你的 Bangumi 主页链接 user 后面那一串数字'));
         $form->addInput($ID);
 
-        $ApiBase = new Text('ApiBase', NULL, '', _t('Bangumi API 镜像'), _t('填写等价于 https://api.bgm.tv 的 API 根地址，例如 https://example.com；留空则使用官方 API。'));
+        $ApiBase = new Text('ApiBase', NULL, '', _t('Bangumi API 镜像'), _t('填写等价于 https://api.bgm.tv 的 HTTPS API 根地址，例如 https://example.com；留空则使用官方 API，HTTP 地址会被忽略。'));
         $form->addInput($ApiBase);
 
         $PageSize = new Text('PageSize', NULL, '6', _t('每页数量'), _t('填写番剧列表每页数量，填写 -1 则在一页内全部显示，默认为 6.'));

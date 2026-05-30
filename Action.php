@@ -26,26 +26,32 @@ class Action extends Contents implements ActionInterface
      */
     public function action(): void
     {
-        header("Content-type: application/json");
-        if (!array_key_exists('type', $_GET)) {
-            echo json_encode(array());
+        header("Content-Type: application/json; charset=UTF-8");
+
+        $type = strtolower((string)($_GET['type'] ?? ''));
+        if (!in_array($type, ['watching', 'watched', 'calendar'], true)) {
+            echo BangumiAPI::encodeJson(array());
             exit;
         }
 
         $options = Helper::options();
-        $ID = $options->plugin('PandaBangumi')->ID;
-        $PageSize = $options->plugin('PandaBangumi')->PageSize;
-        $ValidTimeSpan = $options->plugin('PandaBangumi')->ValidTimeSpan;
-        $From = array_key_exists('from', $_GET) ? $_GET['from'] : 0;
+        $pluginOptions = $options->plugin('PandaBangumi');
+        $ID = trim((string)($pluginOptions->ID ?? ''));
+        $PageSize = (int)($pluginOptions->PageSize ?? 6);
+        $ValidTimeSpan = max(0, (int)($pluginOptions->ValidTimeSpan ?? 86400));
+        $From = (int)($_GET['from'] ?? 0);
+
         if ($PageSize == -1) {
             $PageSize = 1000000;
+        } else {
+            $PageSize = max(1, min($PageSize, 100));
         }
 
-        if (strtolower($_GET['type']) == 'watching')
+        if ($type == 'watching')
             echo BangumiAPI::updateWatchingCacheAndReturn($ID, $PageSize, $From, $ValidTimeSpan);
-        elseif (strtolower($_GET['type']) == 'watched')
+        elseif ($type == 'watched')
             echo BangumiAPI::updateWatchedCacheAndReturn($ID, $PageSize, $From, $ValidTimeSpan);
-        elseif (strtolower($_GET['type']) == 'calendar')
+        elseif ($type == 'calendar')
             echo BangumiAPI::updateCalendarCacheAndReturn($ID, $ValidTimeSpan);
     }
 }

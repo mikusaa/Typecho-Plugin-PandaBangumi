@@ -8,6 +8,8 @@ use Utils\Helper;
 class BangumiAPI
 {
     private const DEFAULT_API_BASE = 'https://api.bgm.tv';
+    private const EMPTY_COLLECTION_CACHE = array('time' => 1, 'data' => array());
+    private const EMPTY_TYPED_CACHE = array('time' => 1, 'data' => array('anime' => array(), 'real' => array()));
 
     /**
      * 获取 Bangumi API 基础地址
@@ -26,7 +28,25 @@ class BangumiAPI
             $apiBase = '';
         }
 
-        return $apiBase === '' ? self::DEFAULT_API_BASE : rtrim($apiBase, '/');
+        if ($apiBase === '') {
+            return self::DEFAULT_API_BASE;
+        }
+
+        $parts = parse_url($apiBase);
+        if (
+            !is_array($parts)
+            || ($parts['scheme'] ?? '') !== 'https'
+            || empty($parts['host'])
+            || isset($parts['user'])
+            || isset($parts['pass'])
+            || isset($parts['query'])
+            || isset($parts['fragment'])
+            || preg_match('/[\x00-\x1F\x7F]/', $apiBase)
+        ) {
+            return self::DEFAULT_API_BASE;
+        }
+
+        return rtrim($apiBase, '/');
     }
 
     /**
@@ -51,6 +71,65 @@ class BangumiAPI
     }
 
     /**
+     * JSON 编码
+     *
+     * @access public
+     * @param mixed $data
+     * @return string
+     */
+    public static function encodeJson(mixed $data): string
+    {
+        $json = json_encode($data, JSON_UNESCAPED_UNICODE);
+        return $json === false ? '[]' : $json;
+    }
+
+    /**
+     * 获取配置的整数值
+     *
+     * @access private
+     * @param string $name
+     * @param int $default
+     * @param int $min
+     * @param int $max
+     * @return int
+     */
+    private static function getIntOption(string $name, int $default, int $min, int $max): int
+    {
+        try {
+            $pluginOptions = Helper::options()->plugin('PandaBangumi');
+            $value = isset($pluginOptions->{$name}) ? (int)$pluginOptions->{$name} : $default;
+        } catch (\Throwable $e) {
+            $value = $default;
+        }
+
+        return max($min, min($value, $max));
+    }
+
+    /**
+     * 获取请求分类
+     *
+     * @access private
+     * @return string
+     */
+    private static function getCate(): string
+    {
+        $cate = strtolower((string)($_GET['cate'] ?? 'anime'));
+        return in_array($cate, ['anime', 'real'], true) ? $cate : '';
+    }
+
+    /**
+     * 获取日历过滤器
+     *
+     * @access private
+     * @return string
+     */
+    private static function getCalendarFilter(): string
+    {
+        $filter = strtolower((string)($_GET['filter'] ?? 'watching'));
+        return $filter === 'watching' ? 'watching' : 'all';
+    }
+
+    /**
      * 使用 curl 代替 file_get_contents()
      *
      * @access public
@@ -60,15 +139,26 @@ class BangumiAPI
     public static function curlFileGetContents(string $_url): bool|string
     {
         $myCurl = curl_init($_url);
-        //不验证证书
-        curl_setopt($myCurl, CURLOPT_SSL_VERIFYPEER, false);
-        curl_setopt($myCurl, CURLOPT_SSL_VERIFYHOST, false);
+        if ($myCurl === false) {
+            return false;
+        }
+
+        curl_setopt($myCurl, CURLOPT_SSL_VERIFYPEER, true);
+        curl_setopt($myCurl, CURLOPT_SSL_VERIFYHOST, 2);
         curl_setopt($myCurl, CURLOPT_RETURNTRANSFER, true);
         curl_setopt($myCurl, CURLOPT_HEADER, false);
+        curl_setopt($myCurl, CURLOPT_CONNECTTIMEOUT, 5);
+        curl_setopt($myCurl, CURLOPT_TIMEOUT, 12);
         curl_setopt($myCurl, CURLOPT_REFERER, 'https://bgm.tv/');
         curl_setopt($myCurl, CURLOPT_USERAGENT, 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36');
         $content = curl_exec($myCurl);
-        //关闭
+        $httpCode = (int)curl_getinfo($myCurl, CURLINFO_RESPONSE_CODE);
+        if ($content === false || $httpCode < 200 || $httpCode >= 300) {
+            error_log('PandaBangumi API request failed: ' . $_url . ' HTTP ' . $httpCode . ' ' . curl_error($myCurl));
+            curl_close($myCurl);
+            return false;
+        }
+
         curl_close($myCurl);
         return $content;
     }
@@ -87,6 +177,10 @@ class BangumiAPI
     {
         $apiUrl = self::buildApiUrl('/v0/users/' . $ID . '/collections') . '?subject_type=' . $subject_type . '&type=' . $status . '&limit=30&offset=' . $Offset;
         $json = self::curlFileGetContents($apiUrl);
+        if ($json === false) {
+            return array();
+        }
+
         if ($json == 'null') {
             return array(); // 没有标记数据
         }
@@ -104,20 +198,26 @@ class BangumiAPI
         $list = $data['data'];
 
         foreach ($list as $item) {
+            $subject = $item['subject'] ?? array();
+            $subjectId = (int)($subject['id'] ?? 0);
+            if ($subjectId <= 0) {
+                continue;
+            }
+
             $collect = array(
-                'name' => $item['subject']['name'],
-                'name_cn' => $item['subject']['name_cn'],
-                'url' => 'https://bgm.tv/subject/' . $item['subject']['id'],
-                'status' => $item['ep_status'],
-                'count' => $item['subject']['eps'],
-                'air_date' => $item['subject']['date'],
-                'img' => $item['subject']['images']['large'],
-                'id' => $item['subject']['id'],
+                'name' => (string)($subject['name'] ?? ''),
+                'name_cn' => (string)($subject['name_cn'] ?? ''),
+                'url' => 'https://bgm.tv/subject/' . $subjectId,
+                'status' => (int)($item['ep_status'] ?? 0),
+                'count' => (int)($subject['eps'] ?? 0),
+                'air_date' => (string)($subject['date'] ?? ''),
+                'img' => (string)($subject['images']['large'] ?? ''),
+                'id' => $subjectId,
             );
             $collections[] = $collect;
         }
 
-        $userLimit = Helper::options()->plugin('PandaBangumi')->Limit;
+        $userLimit = self::getIntOption('Limit', 30, 0, 300);
 
         if ($total > $limit + $offset && $userLimit > $limit + $offset) {
             $collections = array_merge($collections, self::__getCollectionRawData($ID, $limit + $offset, $status, $subject_type));
@@ -136,6 +236,9 @@ class BangumiAPI
     {
         $apiUrl = self::buildApiUrl('/calendar');
         $json = self::curlFileGetContents($apiUrl);
+        if ($json === false) {
+            return array();
+        }
 
         if ($json == 'null') {
             return array();
@@ -150,18 +253,19 @@ class BangumiAPI
 
         foreach ($data as $day) {
             $items = array_map(function ($item) {
+                $id = (int)($item['id'] ?? 0);
                 return [
-                    'id' => $item['id'],
-                    'name' => $item['name'],
-                    'name_cn' => $item['name_cn'],
-                    'url' => $item['url'],
-                    'img' => $item['images']['large']
+                    'id' => $id,
+                    'name' => (string)($item['name'] ?? ''),
+                    'name_cn' => (string)($item['name_cn'] ?? ''),
+                    'url' => $id > 0 ? 'https://bgm.tv/subject/' . $id : '',
+                    'img' => (string)($item['images']['large'] ?? '')
                 ];
-            }, $day['items']);
+            }, $day['items'] ?? array());
             $calendar[] = array(
-                'id' => $day['weekday']['id'],
-                'date_en' => $day['weekday']['en'],
-                'date_cn' => $day['weekday']['cn'],
+                'id' => (int)($day['weekday']['id'] ?? 0),
+                'date_en' => (string)($day['weekday']['en'] ?? ''),
+                'date_cn' => (string)($day['weekday']['cn'] ?? ''),
                 'items' => $items
             );
         }
@@ -179,11 +283,16 @@ class BangumiAPI
      */
     private static function __isCacheExpired(string $FilePath, int $ValidTimeSpan): mixed
     {
-        if (!file_exists($FilePath)) {
+        if (!is_file($FilePath) || !is_readable($FilePath)) {
             return -1;
         }
 
-        $content = json_decode(file_get_contents($FilePath), true);
+        $raw = file_get_contents($FilePath);
+        if ($raw === false) {
+            return -1;
+        }
+
+        $content = json_decode($raw, true);
         if (!is_array($content) || !array_key_exists('time', $content) || $content['time'] < 1) {
             return -1;
         }
@@ -193,6 +302,97 @@ class BangumiAPI
         }
 
         return $content;
+    }
+
+    /**
+     * 写入 JSON 缓存
+     *
+     * @access private
+     * @param string $FilePath
+     * @param array $cache
+     * @return bool
+     */
+    private static function __writeCache(string $FilePath, array $cache): bool
+    {
+        $json = self::encodeJson($cache);
+        $dir = dirname($FilePath);
+        if (!is_dir($dir) || !is_writable($dir)) {
+            return false;
+        }
+
+        $tmpFile = tempnam($dir, 'pb_');
+        if ($tmpFile === false) {
+            return false;
+        }
+
+        if (file_put_contents($tmpFile, $json, LOCK_EX) === false) {
+            @unlink($tmpFile);
+            return false;
+        }
+
+        if (!@rename($tmpFile, $FilePath)) {
+            @unlink($tmpFile);
+            return false;
+        }
+
+        return true;
+    }
+
+    /**
+     * 标准化分类缓存结构
+     *
+     * @access private
+     * @param mixed $cache
+     * @return array
+     */
+    private static function __normalizeTypedCache(mixed $cache): array
+    {
+        if (!is_array($cache) || !isset($cache['data']) || !is_array($cache['data'])) {
+            return self::EMPTY_TYPED_CACHE;
+        }
+
+        foreach (['anime', 'real'] as $cate) {
+            if (!isset($cache['data'][$cate]) || !is_array($cache['data'][$cate])) {
+                $cache['data'][$cate] = array();
+            }
+        }
+
+        return $cache;
+    }
+
+    /**
+     * 标准化列表缓存结构
+     *
+     * @access private
+     * @param mixed $cache
+     * @return array
+     */
+    private static function __normalizeCollectionCache(mixed $cache): array
+    {
+        if (!is_array($cache) || !isset($cache['data']) || !is_array($cache['data'])) {
+            return self::EMPTY_COLLECTION_CACHE;
+        }
+
+        return $cache;
+    }
+
+    /**
+     * 裁剪分页数据并返回 JSON
+     *
+     * @access private
+     * @param array $data
+     * @param int $PageSize
+     * @param int $From
+     * @return string
+     */
+    private static function __sliceData(array $data, int $PageSize, int $From): string
+    {
+        $total = count($data);
+        if ($From < 0 || $From > $total) {
+            return self::encodeJson(array());
+        }
+
+        return self::encodeJson(array_slice($data, $From, $PageSize));
     }
 
 
@@ -225,28 +425,15 @@ class BangumiAPI
             if (!count($watchedAnime) && !count($watchedReal)) {
                 $cache['time'] = 1;
             }
-
-            file_put_contents(__DIR__ . '/json/watched.json', json_encode($cache));
+            self::__writeCache(__DIR__ . '/json/watched.json', $cache);
         }
 
-        $cate = array_key_exists('cate', $_GET) ? $_GET['cate'] : 'anime';
-        $cate = $cate == 'null' ? 'anime' : $cate;
+        $cache = self::__normalizeTypedCache($cache);
+        $cate = self::getCate();
         if (!array_key_exists($cate, $cache['data']))
-            return json_encode(array());
+            return self::encodeJson(array());
 
-        $data = $cache['data'][$cate];
-        $total = count($data);
-
-        if ($From < 0 || $From > $total) {
-            return json_encode(array());
-        }
-
-        $end = min($From + $PageSize, $total);
-        $out = array();
-        for ($index = $From; $index < $end; $index++) {
-            $out[] = $data[$index];
-        }
-        return json_encode($out);
+        return self::__sliceData($cache['data'][$cate], $PageSize, $From);
     }
 
     /**
@@ -268,36 +455,22 @@ class BangumiAPI
             // 缓存无效，重新请求，数据写入
             $watchingAnime = self::__getCollectionRawData($ID);
             $watchingReal = self::__getCollectionRawData($ID, 0, 3, 6);
+            $cache = array('time' => time(), 'data' => array(
+                'anime' => $watchingAnime,
+                'real' => $watchingReal
+            ));
             if (!count($watchingAnime) && !count($watchingReal)) {
-                // 请求数据为空
-                $cache = array('time' => 1, 'data' => array());
-            } else {
-                $cache = array('time' => time(), 'data' => array(
-                    'anime' => $watchingAnime,
-                    'real' => $watchingReal
-                ));
+                $cache['time'] = 1;
             }
-            file_put_contents(__DIR__ . '/json/watching.json', json_encode($cache));
+            self::__writeCache(__DIR__ . '/json/watching.json', $cache);
         }
 
-        $cate = array_key_exists('cate', $_GET) ? $_GET['cate'] : 'anime';
-        $cate = $cate == 'null' ? 'anime' : $cate;
+        $cache = self::__normalizeTypedCache($cache);
+        $cate = self::getCate();
         if (!array_key_exists($cate, $cache['data']))
-            return json_encode(array());
+            return self::encodeJson(array());
 
-        $data = $cache['data'][$cate];
-        $total = count($data);
-
-        if ($From < 0 || $From > $total) {
-            return json_encode(array());
-        }
-
-        $end = min($From + $PageSize, $total);
-        $out = array();
-        for ($index = $From; $index < $end; $index++) {
-            $out[] = $data[$index];
-        }
-        return json_encode($out);
+        return self::__sliceData($cache['data'][$cate], $PageSize, $From);
     }
 
     /**
@@ -322,15 +495,19 @@ class BangumiAPI
             } else {
                 $cache = array('time' => time(), 'data' => $raw);
             }
-            file_put_contents(__DIR__ . '/json/calendar.json', json_encode($cache));
+            self::__writeCache(__DIR__ . '/json/calendar.json', $cache);
         }
 
-        $filter = array_key_exists('filter', $_GET) ? $_GET['filter'] : 'watching';
-        if ($filter != 'watching') {
-            return json_encode($cache['data']);
+        $cache = self::__normalizeCollectionCache($cache);
+        $filter = self::getCalendarFilter();
+        if ($filter !== 'watching') {
+            return self::encodeJson($cache['data']);
         }
 
         $watchingAnimes = json_decode(self::updateWatchingCacheAndReturn($ID, 1000, 0, $ValidTimeSpan), true);
+        if (!is_array($watchingAnimes)) {
+            return self::encodeJson(array());
+        }
         $watchingAnimeIds = array_column($watchingAnimes, 'id');
 
         $cal = array();
@@ -345,6 +522,6 @@ class BangumiAPI
                 'items' => $items
             );
         }
-        return json_encode($cal);
+        return self::encodeJson($cal);
     }
 }
