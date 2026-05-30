@@ -88,6 +88,9 @@ class Plugin implements PluginInterface
         $ID = new Text('ID', NULL, '', _t('用户 ID'), _t('填写你的 Bangumi 主页链接 user 后面那一串数字'));
         $form->addInput($ID);
 
+        $ApiBase = new Text('ApiBase', NULL, '', _t('Bangumi API 镜像'), _t('填写等价于 https://api.bgm.tv 的 API 根地址，例如 https://example.com；留空则使用官方 API。'));
+        $form->addInput($ApiBase);
+
         $PageSize = new Text('PageSize', NULL, '6', _t('每页数量'), _t('填写番剧列表每页数量，填写 -1 则在一页内全部显示，默认为 6.'));
         $form->addInput($PageSize);
 
@@ -118,12 +121,16 @@ class Plugin implements PluginInterface
      */
     public static function header(): void
     {
+        ob_start();
+        Options::alloc()->index('/PandaBangumi');
+        $bgmBase = ob_get_clean();
+
+        $bgmApiBase = BangumiAPI::getApiBase();
+
         echo '<link rel="stylesheet" href="';
         Options::alloc()->pluginUrl('/PandaBangumi/css/PandaBangumi.css');
         echo '?v=' . PandaBangumi_Plugin_VERSION . '" />';
-        echo '<script>window.bgmBase="';
-        Options::alloc()->index('/PandaBangumi');
-        echo '";</script>';
+        echo '<script>window.bgmBase=' . json_encode($bgmBase) . ';window.bgmApiBase=' . json_encode($bgmApiBase) . ';</script>';
     }
 
     /**

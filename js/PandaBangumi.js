@@ -1,4 +1,22 @@
 /**
+ * 构造 Bangumi API 请求地址
+ * @param {string} path
+ * @returns {string}
+ */
+function buildBgmApiUrl(path) {
+    let apiBase = (window.bgmApiBase || 'https://api.bgm.tv').replace(/\/+$/, '');
+    path = '/' + String(path || '').replace(/^\/+/, '');
+
+    if (apiBase.endsWith('/v0') && path.startsWith('/v0/')) {
+        path = path.slice(3);
+    } else if (apiBase.endsWith('/v0') && path === '/v0') {
+        path = '';
+    }
+
+    return apiBase + path;
+}
+
+/**
  * 加载更多番剧条目
  *
  * 此函数根据传入的加载器参数，动态加载更多番剧条目
@@ -211,7 +229,7 @@ async function loadBgmCard() {
  */
 async function renderCard(subjectId, cardElement) {
     cardElement.innerHTML = `<div class="loading-state">正在从 Bangumi 加载数据...</div>`;
-    const url = 'https://api.bgm.tv/v0/subjects/' + subjectId;
+    const url = buildBgmApiUrl('/v0/subjects/' + subjectId);
 
     await fetch(url)
         .then(response => response.json())
@@ -359,4 +377,3 @@ async function initCollection() {
 document.addEventListener('DOMContentLoaded', async () => initCollection())
 
 document.addEventListener('pjax:complete', async () => initCollection())
-

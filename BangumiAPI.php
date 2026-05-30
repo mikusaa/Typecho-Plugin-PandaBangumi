@@ -7,6 +7,49 @@ use Utils\Helper;
 
 class BangumiAPI
 {
+    private const DEFAULT_API_BASE = 'https://api.bgm.tv';
+
+    /**
+     * 获取 Bangumi API 基础地址
+     *
+     * @access public
+     * @return string
+     */
+    public static function getApiBase(): string
+    {
+        $apiBase = '';
+
+        try {
+            $pluginOptions = Helper::options()->plugin('PandaBangumi');
+            $apiBase = isset($pluginOptions->ApiBase) ? trim((string)$pluginOptions->ApiBase) : '';
+        } catch (\Throwable $e) {
+            $apiBase = '';
+        }
+
+        return $apiBase === '' ? self::DEFAULT_API_BASE : rtrim($apiBase, '/');
+    }
+
+    /**
+     * 构造 Bangumi API 请求地址
+     *
+     * @access public
+     * @param string $path
+     * @return string
+     */
+    public static function buildApiUrl(string $path): string
+    {
+        $apiBase = self::getApiBase();
+        $path = '/' . ltrim($path, '/');
+
+        if (str_ends_with($apiBase, '/v0') && str_starts_with($path, '/v0/')) {
+            $path = substr($path, 3);
+        } elseif (str_ends_with($apiBase, '/v0') && $path === '/v0') {
+            $path = '';
+        }
+
+        return $apiBase . $path;
+    }
+
     /**
      * 使用 curl 代替 file_get_contents()
      *
@@ -42,7 +85,7 @@ class BangumiAPI
      */
     private static function __getCollectionRawData(string $ID, int $Offset = 0, int $status = 3, int $subject_type = 2): array
     {
-        $apiUrl = 'https://api.bgm.tv/v0/users/' . $ID . '/collections?subject_type=' . $subject_type . '&type=' . $status . '&limit=30&offset=' . $Offset;
+        $apiUrl = self::buildApiUrl('/v0/users/' . $ID . '/collections') . '?subject_type=' . $subject_type . '&type=' . $status . '&limit=30&offset=' . $Offset;
         $json = self::curlFileGetContents($apiUrl);
         if ($json == 'null') {
             return array(); // 没有标记数据
@@ -91,7 +134,7 @@ class BangumiAPI
      */
     private static function __getCalendarRawData(): array
     {
-        $apiUrl = 'https://api.bgm.tv/calendar';
+        $apiUrl = self::buildApiUrl('/calendar');
         $json = self::curlFileGetContents($apiUrl);
 
         if ($json == 'null') {
