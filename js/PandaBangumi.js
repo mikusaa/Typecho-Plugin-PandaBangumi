@@ -62,20 +62,31 @@ function safeHttpsUrl(value) {
 }
 
 /**
+ * 规范化 HTTPS origin，忽略用户误填的路径。
+ * @param {string} value
+ * @returns {string}
+ */
+function safeHttpsOrigin(value) {
+    const safeUrl = safeHttpsUrl(value);
+    if (!safeUrl) {
+        return '';
+    }
+
+    try {
+        return new URL(safeUrl).origin;
+    } catch (error) {
+        return '';
+    }
+}
+
+/**
  * 构造 Bangumi API 请求地址
  * @param {string} path
  * @returns {string}
  */
 function buildBgmApiUrl(path) {
-    let apiBase = safeHttpsUrl(window.bgmApiBase) || 'https://api.bgm.tv';
-    apiBase = apiBase.replace(/\/+$/, '');
+    const apiBase = safeHttpsOrigin(window.bgmApiBase) || 'https://api.bgm.tv';
     path = '/' + String(path || '').replace(/^\/+/, '');
-
-    if (apiBase.endsWith('/v0') && path.startsWith('/v0/')) {
-        path = path.slice(3);
-    } else if (apiBase.endsWith('/v0') && path === '/v0') {
-        path = '';
-    }
 
     return apiBase + path;
 }

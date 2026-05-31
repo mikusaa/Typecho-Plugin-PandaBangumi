@@ -12,7 +12,7 @@
 
 解压后把文件夹改名为 `PandaBangumi` ，上传到服务器 `usr/plugins` 目录下，在 Typecho 后台启用本插件，填写 ID（即用户主页链接后的那串数字），设置一下每页展示的数量。
 
-如果你的服务器或访客网络无法直接访问 Bangumi API，可以在插件设置的 `Bangumi API 镜像` 中填写等价于 `https://api.bgm.tv` 的 HTTPS 镜像根地址；留空则使用官方 API，HTTP 地址会被忽略。番剧卡片由浏览器直接请求该 API 地址，请选择支持 CORS 的 HTTPS 镜像服务。
+如果你的服务器或访客网络无法直接访问 Bangumi API，可以在插件设置的 `Bangumi API 镜像` 中填写等价于 `https://api.bgm.tv` 的 HTTPS 镜像域名，例如 `https://bgm-api.example.com`；留空则使用官方 API，HTTP 地址会被忽略。请只填写域名，不要带 `/v0` 或其他路径；如果误填了路径，插件会自动忽略路径。追番日历会请求 `{镜像域名}/calendar`，番剧卡片由浏览器直接请求该 API 地址，请选择支持 CORS 的 HTTPS 镜像服务。
 
 在任何页面，不论是独立页还是一般的文章页面，在文章里插入代码：
 

@@ -35,7 +35,7 @@ class BangumiAPI
         $parts = parse_url($apiBase);
         if (
             !is_array($parts)
-            || ($parts['scheme'] ?? '') !== 'https'
+            || strtolower((string)($parts['scheme'] ?? '')) !== 'https'
             || empty($parts['host'])
             || isset($parts['user'])
             || isset($parts['pass'])
@@ -46,7 +46,12 @@ class BangumiAPI
             return self::DEFAULT_API_BASE;
         }
 
-        return rtrim($apiBase, '/');
+        $origin = 'https://' . $parts['host'];
+        if (isset($parts['port'])) {
+            $origin .= ':' . (int)$parts['port'];
+        }
+
+        return $origin;
     }
 
     /**
@@ -60,12 +65,6 @@ class BangumiAPI
     {
         $apiBase = self::getApiBase();
         $path = '/' . ltrim($path, '/');
-
-        if (str_ends_with($apiBase, '/v0') && str_starts_with($path, '/v0/')) {
-            $path = substr($path, 3);
-        } elseif (str_ends_with($apiBase, '/v0') && $path === '/v0') {
-            $path = '';
-        }
 
         return $apiBase . $path;
     }

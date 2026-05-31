@@ -19,11 +19,11 @@ if (!defined('__TYPECHO_ROOT_DIR__')) {
  *
  * @package PandaBangumi
  * @author 熊猫小A
- * @version 3.0.3
+ * @version 3.0.4
  * @link https://www.imalan.cn
  */
 
-define('PandaBangumi_Plugin_VERSION', '3.0.3');
+define('PandaBangumi_Plugin_VERSION', '3.0.4');
 
 class Plugin implements PluginInterface
 {
@@ -92,7 +92,7 @@ class Plugin implements PluginInterface
         $ID = new Text('ID', NULL, '', _t('用户 ID'), _t('填写你的 Bangumi 主页链接 user 后面那一串数字'));
         $form->addInput($ID);
 
-        $ApiBase = new Text('ApiBase', NULL, '', _t('Bangumi API 镜像'), _t('填写等价于 https://api.bgm.tv 的 HTTPS API 根地址，例如 https://example.com；留空则使用官方 API，HTTP 地址会被忽略。'));
+        $ApiBase = new Text('ApiBase', NULL, '', _t('Bangumi API 镜像'), _t('只填写等价于 https://api.bgm.tv 的 HTTPS 镜像域名，例如 https://example.com；不要带 /v0 或其他路径，路径会被自动忽略。留空则使用官方 API，HTTP 地址会被忽略。'));
         $form->addInput($ApiBase);
 
         $PageSize = new Text('PageSize', NULL, '6', _t('每页数量'), _t('填写番剧列表每页数量，填写 -1 则在一页内全部显示，默认为 6.'));
