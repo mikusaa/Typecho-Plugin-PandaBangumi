@@ -1,4 +1,48 @@
 /**
+ * PandaBangumi 全局状态
+ */
+var PandaBangumiRuntime = window.PandaBangumi || {};
+PandaBangumiRuntime.controllers = PandaBangumiRuntime.controllers || new Set();
+PandaBangumiRuntime.initTimer = PandaBangumiRuntime.initTimer || null;
+PandaBangumiRuntime.bound = PandaBangumiRuntime.bound || false;
+window.PandaBangumi = PandaBangumiRuntime;
+
+/**
+ * 判断是否为请求取消
+ * @param {unknown} error
+ * @returns {boolean}
+ */
+function isAbortError(error) {
+    return error && error.name === 'AbortError';
+}
+
+/**
+ * 创建可被 PJAX 生命周期取消的请求控制器
+ * @returns {AbortController}
+ */
+function createRequestController() {
+    const controller = new AbortController();
+    PandaBangumiRuntime.controllers.add(controller);
+    return controller;
+}
+
+/**
+ * 移除请求控制器
+ * @param {AbortController} controller
+ */
+function removeRequestController(controller) {
+    PandaBangumiRuntime.controllers.delete(controller);
+}
+
+/**
+ * 取消未完成请求
+ */
+function abortPendingRequests() {
+    PandaBangumiRuntime.controllers.forEach(controller => controller.abort());
+    PandaBangumiRuntime.controllers.clear();
+}
+
+/**
  * 校验 HTTPS URL
  * @param {string} value
  * @returns {string}
@@ -61,10 +105,11 @@ function setLoading(loader) {
 /**
  * 获取 JSON 响应
  * @param {string} url
+ * @param {AbortSignal} [signal]
  * @returns {Promise<any>}
  */
-async function fetchJson(url) {
-    const response = await fetch(url);
+async function fetchJson(url, signal) {
+    const response = await fetch(url, { signal });
     if (!response.ok) {
         throw new Error(`HTTP ${response.status}`);
     }
@@ -136,11 +181,14 @@ function createBgmItem(item, type) {
  * @param {HTMLElement} loader
  */
 async function loadMoreBgm(loader) {
+    if (!loader || loader.dataset.bgmLoading === '1') return;
+    loader.dataset.bgmLoading = '1';
     setLoading(loader);
 
     const refId = loader.getAttribute('data-ref');
     const listEl = refId ? document.getElementById(refId) : null;
     if (!listEl) {
+        delete loader.dataset.bgmLoading;
         setText(loader, '加载失败');
         return;
     }
@@ -153,9 +201,12 @@ async function loadMoreBgm(loader) {
     const type = listEl.getAttribute('data-type') === 'watched' ? 'watched' : 'watching';
     const cate = listEl.getAttribute('data-cate') === 'real' ? 'real' : 'anime';
     const url = `${window.bgmBase}?from=${String(bgmCur)}&type=${type}&cate=${cate}`;
+    const controller = createRequestController();
 
     try {
-        const data = await fetchJson(url);
+        const data = await fetchJson(url, controller.signal);
+        if (!loader.isConnected || !listEl.isConnected) return;
+
         setText(loader, '加载更多');
         if (!Array.isArray(data) || data.length < 1) {
             setText(loader, '没有了');
@@ -169,8 +220,14 @@ async function loadMoreBgm(loader) {
 
         listEl.setAttribute('bgmCur', String(bgmCur));
     } catch (error) {
+        if (isAbortError(error)) return;
         console.error('加载更多番剧失败:', error);
-        setText(loader, '加载失败');
+        if (loader.isConnected) {
+            setText(loader, '加载失败');
+        }
+    } finally {
+        removeRequestController(controller);
+        delete loader.dataset.bgmLoading;
     }
 }
 
@@ -179,18 +236,21 @@ async function loadMoreBgm(loader) {
  * @param {HTMLElement} calContainer
  */
 async function loadCalendar(calContainer) {
-    if (!calContainer || calContainer.dataset.bgmLoaded === '1') return;
-    calContainer.dataset.bgmLoaded = '1';
+    if (!calContainer || calContainer.dataset.bgmLoaded === '1' || calContainer.dataset.bgmLoading === '1') return;
+    calContainer.dataset.bgmLoading = '1';
 
     const calFilter = calContainer.getAttribute('data-filter') === 'watching' ? 'watching' : 'all';
     const url = `${window.bgmBase}?type=calendar&filter=${calFilter}`;
+    const controller = createRequestController();
     const getTodayId = () => {
         const jsDay = new Date().getDay();
         return jsDay === 0 ? 7 : jsDay;
     };
 
     try {
-        const data = await fetchJson(url);
+        const data = await fetchJson(url, controller.signal);
+        if (!calContainer.isConnected) return;
+
         const todayId = getTodayId();
         calContainer.textContent = '';
 
@@ -271,14 +331,21 @@ async function loadCalendar(calContainer) {
                 }
             }
         });
+        calContainer.dataset.bgmLoaded = '1';
     } catch (error) {
+        if (isAbortError(error)) return;
         console.error('加载日历失败:', error);
-        calContainer.textContent = '';
-        const errorEl = document.createElement('p');
-        errorEl.className = 'error';
-        errorEl.textContent = '加载日历失败，请刷新页面。';
-        calContainer.appendChild(errorEl);
-        delete calContainer.dataset.bgmLoaded;
+        if (calContainer.isConnected) {
+            calContainer.textContent = '';
+            const errorEl = document.createElement('p');
+            errorEl.className = 'error';
+            errorEl.textContent = '加载日历失败，请刷新页面。';
+            calContainer.appendChild(errorEl);
+            delete calContainer.dataset.bgmLoaded;
+        }
+    } finally {
+        removeRequestController(controller);
+        delete calContainer.dataset.bgmLoading;
     }
 }
 
@@ -286,7 +353,7 @@ async function loadCalendar(calContainer) {
  * 加载番剧卡片信息
  */
 async function loadBgmCard() {
-    const cards = document.querySelectorAll('.bgm-card:not([data-bgm-loaded="1"])');
+    const cards = document.querySelectorAll('.bgm-card:not([data-bgm-loaded="1"]):not([data-bgm-loading="1"])');
 
     for (const card of cards) {
         const id = card.getAttribute('data-id');
@@ -301,7 +368,9 @@ async function loadBgmCard() {
  * @param {HTMLElement} cardElement
  */
 async function renderCard(subjectId, cardElement) {
-    cardElement.dataset.bgmLoaded = '1';
+    if (!cardElement || cardElement.dataset.bgmLoaded === '1' || cardElement.dataset.bgmLoading === '1') return;
+
+    cardElement.dataset.bgmLoading = '1';
     cardElement.textContent = '';
     const loading = document.createElement('div');
     loading.className = 'loading-state';
@@ -311,20 +380,31 @@ async function renderCard(subjectId, cardElement) {
     const safeSubjectId = parseInt(subjectId, 10);
     if (!Number.isInteger(safeSubjectId) || safeSubjectId <= 0) {
         renderCardError(cardElement, subjectId);
+        delete cardElement.dataset.bgmLoading;
         return;
     }
+    const controller = createRequestController();
 
     try {
-        const data = await fetchJson(buildBgmApiUrl('/v0/subjects/' + safeSubjectId));
+        const data = await fetchJson(buildBgmApiUrl('/v0/subjects/' + safeSubjectId), controller.signal);
+        if (!cardElement.isConnected) return;
+
         if (data.id === safeSubjectId) {
             cardElement.textContent = '';
             cardElement.appendChild(buildCardElement(data, safeSubjectId));
+            cardElement.dataset.bgmLoaded = '1';
         } else {
             throw new Error('返回的番剧数据无效');
         }
     } catch (error) {
+        if (isAbortError(error)) return;
         console.error('Error fetching data:', error);
-        renderCardError(cardElement, subjectId);
+        if (cardElement.isConnected) {
+            renderCardError(cardElement, subjectId);
+        }
+    } finally {
+        removeRequestController(controller);
+        delete cardElement.dataset.bgmLoading;
     }
 }
 
@@ -335,6 +415,7 @@ async function renderCard(subjectId, cardElement) {
  */
 function renderCardError(cardElement, subjectId) {
     delete cardElement.dataset.bgmLoaded;
+    delete cardElement.dataset.bgmLoading;
     cardElement.textContent = '';
     const errorEl = document.createElement('div');
     errorEl.className = 'error-state';
@@ -496,11 +577,22 @@ async function initCollection() {
             item.id = 'bgm-collection-' + String(Date.now()) + '-' + String(bgmIndex);
         }
 
-        const loader = document.createElement('div');
+        let loader = item.nextElementSibling && item.nextElementSibling.classList.contains('loader') && item.nextElementSibling.dataset.ref === item.id
+            ? item.nextElementSibling
+            : null;
+        if (!loader) {
+            loader = document.createElement('div');
+            loader.className = 'loader';
+            loader.dataset.ref = item.id;
+            item.insertAdjacentElement('afterend', loader);
+        }
+
         loader.className = 'loader';
         loader.dataset.ref = item.id;
-        loader.addEventListener('click', () => loadMoreBgm(loader));
-        item.insertAdjacentElement('afterend', loader);
+        if (loader.dataset.bgmBound !== '1') {
+            loader.dataset.bgmBound = '1';
+            loader.addEventListener('click', () => loadMoreBgm(loader));
+        }
         loadMoreBgm(loader);
     });
 
@@ -511,5 +603,34 @@ async function initCollection() {
     await loadBgmCard();
 }
 
-document.addEventListener('DOMContentLoaded', async () => initCollection());
-document.addEventListener('pjax:complete', async () => initCollection());
+/**
+ * 防抖调度初始化
+ */
+function scheduleInit() {
+    if (PandaBangumiRuntime.initTimer) {
+        clearTimeout(PandaBangumiRuntime.initTimer);
+    }
+    PandaBangumiRuntime.initTimer = setTimeout(() => {
+        PandaBangumiRuntime.initTimer = null;
+        initCollection();
+    }, 30);
+}
+
+PandaBangumiRuntime.init = scheduleInit;
+window.initCollection = initCollection;
+
+if (!PandaBangumiRuntime.bound) {
+    PandaBangumiRuntime.bound = true;
+
+    ['DOMContentLoaded', 'pjax:complete', 'pjax:end', 'pjax:success', 'turbo:load', 'turbolinks:load'].forEach(eventName => {
+        document.addEventListener(eventName, scheduleInit);
+    });
+
+    ['pjax:send', 'pjax:beforeReplace', 'turbo:before-render'].forEach(eventName => {
+        document.addEventListener(eventName, abortPendingRequests);
+    });
+
+    if (document.readyState !== 'loading') {
+        scheduleInit();
+    }
+}
