@@ -21,6 +21,7 @@ class BangumiAPI
     );
     private const COVER_CACHE_MAX_BYTES = 5242880;
     private const COVER_CACHE_RETENTION = 7776000;
+    private const CACHE_FAILURE_RETRY = 300;
     private const COVER_MIME_TYPES = array(
         'image/jpeg' => 'jpg',
         'image/png' => 'png',
@@ -257,17 +258,18 @@ class BangumiAPI
      * @param int $status 1:想看 2:看过 3:在看 4:搁置 5:抛弃
      * @param int $subject_type 1:book 2:anime 3:music 4:game 6:real
      * @param int $userLimit
-     * @return array
+     * @return array{data: array, complete: bool}
      * @throws Exception
      */
     private static function __getCollectionRawData(string $ID, int $status, int $subject_type, int $userLimit): array
     {
         if ($ID === '' || $userLimit <= 0) {
-            return array();
+            return array('data' => array(), 'complete' => true);
         }
 
         $offset = 0;
         $collections = array();
+        $complete = true;
         do {
             $apiUrl = self::buildApiUrl('/v0/users/' . rawurlencode($ID) . '/collections')
                 . '?subject_type=' . $subject_type
@@ -276,11 +278,13 @@ class BangumiAPI
                 . '&offset=' . $offset;
             $json = self::curlFileGetContents($apiUrl);
             if ($json === false || $json === 'null') {
+                $complete = false;
                 break;
             }
 
             $data = json_decode($json, true);
             if (!is_array($data) || !isset($data['total'], $data['data']) || !is_array($data['data'])) {
+                $complete = false;
                 break;
             }
 
@@ -314,30 +318,33 @@ class BangumiAPI
             $hasMore = $offset < (int)$data['total'] && count($data['data']) > 0;
         } while ($hasMore);
 
-        return array_slice($collections, 0, $userLimit);
+        return array(
+            'data' => array_slice($collections, 0, $userLimit),
+            'complete' => $complete
+        );
     }
 
     /**
      * 获取日历数据并格式化返回
      *
-     * @return array
+     * @return array|null
      * @throws Exception
      */
-    private static function __getCalendarRawData(): array
+    private static function __getCalendarRawData(): ?array
     {
         $apiUrl = self::buildApiUrl('/calendar');
         $json = self::curlFileGetContents($apiUrl);
         if ($json === false) {
-            return array();
+            return null;
         }
 
         if ($json == 'null') {
-            return array();
+            return null;
         }
 
         $data = json_decode($json, true);
         if (!is_array($data)) {
-            return array();
+            return null;
         }
 
         $calendar = array();
@@ -427,6 +434,78 @@ class BangumiAPI
         }
 
         return true;
+    }
+
+    /**
+     * 判断失败后的短暂退避是否仍然有效
+     */
+    private static function isCacheRefreshDeferred(array $cache): bool
+    {
+        return (int)($cache['retry_after'] ?? 0) > time();
+    }
+
+    /**
+     * 记录刷新失败，同时保留当前缓存数据
+     */
+    private static function deferCacheRefresh(string $filePath, array $cache): array
+    {
+        if (!isset($cache['time'])) {
+            $cache['time'] = 1;
+        }
+        $cache['retry_after'] = time() + self::CACHE_FAILURE_RETRY;
+        self::__writeCache($filePath, $cache);
+        return $cache;
+    }
+
+    /**
+     * 从已读取内容中选择当前可以直接使用的缓存
+     */
+    private static function getUsableCache(
+        string $filePath,
+        int $validTimeSpan,
+        array $stored,
+        callable $isCompatible
+    ): ?array
+    {
+        if (!$isCompatible($stored)) {
+            return null;
+        }
+
+        $fresh = self::__isCacheExpired($filePath, $validTimeSpan);
+        if (is_array($fresh)) {
+            return $fresh;
+        }
+
+        return self::isCacheRefreshDeferred($stored) ? $stored : null;
+    }
+
+    /**
+     * 获取独立于原子替换目标的刷新锁
+     *
+     * @return resource|false
+     */
+    private static function acquireCacheRefreshLock(string $filePath)
+    {
+        $lockHandle = @fopen($filePath . '.refresh.lock', 'c');
+        if ($lockHandle === false || !flock($lockHandle, LOCK_EX)) {
+            if (is_resource($lockHandle)) {
+                fclose($lockHandle);
+            }
+            return false;
+        }
+
+        return $lockHandle;
+    }
+
+    /**
+     * 释放缓存刷新锁
+     *
+     * @param resource $lockHandle
+     */
+    private static function releaseCacheRefreshLock($lockHandle): void
+    {
+        flock($lockHandle, LOCK_UN);
+        fclose($lockHandle);
     }
 
     /**
@@ -998,41 +1077,61 @@ class BangumiAPI
         $filePath = self::getDataCachePath($cacheFileName);
         $userLimit = self::getIntOption('Limit', 30, 0, 300);
         $userKey = hash('sha256', $ID);
-        $cache = self::__isCacheExpired($filePath, $ValidTimeSpan);
+        $isCompatible = static function (array $cache) use ($userLimit, $userKey, $cate): bool {
+            return isset($cache['data'])
+                && is_array($cache['data'])
+                && ($cache['data_variant'] ?? '') === self::COLLECTION_CACHE_VARIANT
+                && (int)($cache['limit'] ?? -1) === $userLimit
+                && (string)($cache['user_key'] ?? '') === $userKey
+                && (string)($cache['cate'] ?? '') === $cate;
+        };
 
-        if (is_array($cache) && (
-            ($cache['data_variant'] ?? '') !== self::COLLECTION_CACHE_VARIANT
-            || (int)($cache['limit'] ?? -1) !== $userLimit
-            || (string)($cache['user_key'] ?? '') !== $userKey
-            || (string)($cache['cate'] ?? '') !== $cate
-        )) {
-            $cache = 1;
+        $stored = self::readCacheFile($filePath);
+        $cache = self::getUsableCache($filePath, $ValidTimeSpan, $stored, $isCompatible);
+        if ($cache !== null) {
+            return self::__normalizeCollectionCache($cache);
         }
 
-        if ($cache == -1 || $cache == 1) {
-            $data = self::__getCollectionRawData(
+        $lockHandle = self::acquireCacheRefreshLock($filePath);
+        if ($lockHandle === false) {
+            return $isCompatible($stored) ? $stored : self::EMPTY_COLLECTION_CACHE;
+        }
+
+        try {
+            // 其他请求可能已经在等待锁期间完成刷新。
+            $stored = self::readCacheFile($filePath);
+            $cache = self::getUsableCache($filePath, $ValidTimeSpan, $stored, $isCompatible);
+            if ($cache !== null) {
+                return self::__normalizeCollectionCache($cache);
+            }
+
+            $result = self::__getCollectionRawData(
                 $ID,
                 $status,
                 self::COLLECTION_SUBJECT_TYPES[$cate],
                 $userLimit
             );
-            $cache = array(
+            $newCache = array(
                 'time' => time(),
                 'data_variant' => self::COLLECTION_CACHE_VARIANT,
                 'limit' => $userLimit,
                 'user_key' => $userKey,
                 'cate' => $cate,
-                'data' => $data
+                'data' => $result['data']
             );
-            if ($userLimit > 0 && !count($data)) {
-                $cache['time'] = 1;
+
+            if (!$result['complete']) {
+                $fallback = $isCompatible($stored) ? $stored : array_merge($newCache, array('time' => 1));
+                return self::__normalizeCollectionCache(self::deferCacheRefresh($filePath, $fallback));
             }
-            self::__writeCache($filePath, $cache);
+
+            self::__writeCache($filePath, $newCache);
             $calendar = self::readCacheFile(self::getDataCachePath('calendar.json'));
             self::cleanupCoverCache($calendar['data'] ?? array());
+            return $newCache;
+        } finally {
+            self::releaseCacheRefreshLock($lockHandle);
         }
-
-        return self::__normalizeCollectionCache($cache);
     }
 
     /**
@@ -1215,26 +1314,53 @@ class BangumiAPI
         }
 
         $directory = self::getSubjectCacheDirectory();
-        if (!is_writable($directory)) {
-            return self::encodeJson(array());
-        }
-
         $filePath = $directory . '/' . $subjectId . '.json';
-        $cache = self::__isCacheExpired($filePath, $ValidTimeSpan);
-        if ($cache == -1 || $cache == 1) {
-            $json = self::curlFileGetContents(self::buildApiUrl('/v0/subjects/' . $subjectId));
-            $data = $json !== false ? json_decode($json, true) : null;
-            if (!is_array($data) || (int)($data['id'] ?? 0) !== $subjectId) {
-                return self::encodeJson(array());
-            }
+        $isCompatible = static function (array $cache) use ($subjectId): bool {
+            return isset($cache['data'])
+                && is_array($cache['data'])
+                && (
+                    (int)($cache['data']['id'] ?? 0) === $subjectId
+                    || (
+                        count($cache['data']) === 0
+                        && (int)($cache['subject_id'] ?? 0) === $subjectId
+                    )
+                );
+        };
 
-            $cache = array('time' => time(), 'data' => $data);
-            self::__writeCache($filePath, $cache);
+        $stored = self::readCacheFile($filePath);
+        $cache = self::getUsableCache($filePath, $ValidTimeSpan, $stored, $isCompatible);
+
+        if ($cache === null) {
+            $lockHandle = self::acquireCacheRefreshLock($filePath);
+            if ($lockHandle === false) {
+                $cache = $isCompatible($stored) ? $stored : self::EMPTY_COLLECTION_CACHE;
+            } else {
+                try {
+                    $stored = self::readCacheFile($filePath);
+                    $cache = self::getUsableCache($filePath, $ValidTimeSpan, $stored, $isCompatible);
+
+                    if ($cache === null) {
+                        $json = self::curlFileGetContents(self::buildApiUrl('/v0/subjects/' . $subjectId));
+                        $data = $json !== false ? json_decode($json, true) : null;
+                        if (is_array($data) && (int)($data['id'] ?? 0) === $subjectId) {
+                            $cache = array('time' => time(), 'subject_id' => $subjectId, 'data' => $data);
+                            self::__writeCache($filePath, $cache);
+                        } else {
+                            $fallback = $isCompatible($stored)
+                                ? $stored
+                                : array('time' => 1, 'subject_id' => $subjectId, 'data' => array());
+                            $cache = self::deferCacheRefresh($filePath, $fallback);
+                        }
+                    }
+                } finally {
+                    self::releaseCacheRefreshLock($lockHandle);
+                }
+            }
         }
 
         $cache = self::__normalizeCollectionCache($cache);
         $data = $cache['data'];
-        if (!is_array($data)) {
+        if (!is_array($data) || (int)($data['id'] ?? 0) !== $subjectId) {
             return self::encodeJson(array());
         }
 
@@ -1315,27 +1441,49 @@ class BangumiAPI
     public static function updateCalendarCacheAndReturn(string $ID, int $ValidTimeSpan): string
     {
         $filePath = self::getDataCachePath('calendar.json');
-        $cache = self::__isCacheExpired($filePath, $ValidTimeSpan);
+        $isCompatible = static function (array $cache): bool {
+            return isset($cache['data'])
+                && is_array($cache['data'])
+                && ($cache['image_variant'] ?? '') === self::CALENDAR_IMAGE_VARIANT;
+        };
 
-        if (is_array($cache) && ($cache['image_variant'] ?? '') !== self::CALENDAR_IMAGE_VARIANT) {
-            $cache = 1;
-        }
+        $stored = self::readCacheFile($filePath);
+        $cache = self::getUsableCache($filePath, $ValidTimeSpan, $stored, $isCompatible);
 
-        if ($cache == -1 || $cache == 1) {
-            // 缓存无效，重新请求，数据写入
-            $raw = self::__getCalendarRawData();
-            if ($raw == -1 || count($raw) == 0) {
-                // 请求数据为空
-                $cache = array('time' => 1, 'data' => array());
+        if ($cache === null) {
+            $lockHandle = self::acquireCacheRefreshLock($filePath);
+            if ($lockHandle === false) {
+                $cache = $isCompatible($stored) ? $stored : self::EMPTY_COLLECTION_CACHE;
             } else {
-                $cache = array(
-                    'time' => time(),
-                    'image_variant' => self::CALENDAR_IMAGE_VARIANT,
-                    'data' => $raw
-                );
-                self::cleanupCoverCache($raw);
+                try {
+                    $stored = self::readCacheFile($filePath);
+                    $cache = self::getUsableCache($filePath, $ValidTimeSpan, $stored, $isCompatible);
+
+                    if ($cache === null) {
+                        $raw = self::__getCalendarRawData();
+                        if ($raw !== null) {
+                            $cache = array(
+                                'time' => time(),
+                                'image_variant' => self::CALENDAR_IMAGE_VARIANT,
+                                'data' => $raw
+                            );
+                            self::__writeCache($filePath, $cache);
+                            self::cleanupCoverCache($raw);
+                        } else {
+                            $fallback = $isCompatible($stored)
+                                ? $stored
+                                : array(
+                                    'time' => 1,
+                                    'image_variant' => self::CALENDAR_IMAGE_VARIANT,
+                                    'data' => array()
+                                );
+                            $cache = self::deferCacheRefresh($filePath, $fallback);
+                        }
+                    }
+                } finally {
+                    self::releaseCacheRefreshLock($lockHandle);
+                }
             }
-            self::__writeCache($filePath, $cache);
         }
 
         $cache = self::__normalizeCollectionCache($cache);

@@ -299,7 +299,6 @@ function loadCalendarPanelImages(panel) {
     panel.querySelectorAll('.bgm-poster-card[data-cover-url]').forEach(item => {
         observePosterCover(item);
     });
-    panel.dataset.imagesLoaded = '1';
 }
 
 /**
@@ -346,7 +345,7 @@ async function fetchJson(url, signal) {
 /**
  * 创建通用封面卡片
  * @param {object} item
- * @param {{type: string, cate?: string, imageUrl?: string, deferCover?: boolean}} options
+ * @param {{type: string, cate?: string, imageUrl?: string}} options
  * @returns {HTMLElement}
  */
 function createPosterCard(item, options) {
@@ -437,6 +436,7 @@ function setCollectionActionState(action, state) {
     const content = states[state] || states.load;
 
     action.className = `bgm-collection-action bgm-collection-action--${state}`;
+    action.dataset.bgmState = state;
     action.textContent = '';
     action.setAttribute('aria-label', content.label);
     if (action instanceof HTMLButtonElement) {
@@ -488,13 +488,13 @@ function createCollectionExternalLink(url) {
 /**
  * 加载更多番剧条目
  * @param {HTMLButtonElement} action
- * @param {{deferCoverLoading?: boolean}} [options]
  */
-async function loadMoreBgm(action, options) {
+async function loadMoreBgm(action) {
     if (!action || action.dataset.bgmLoading === '1') return;
     const listEl = action.closest('.bgm-collection');
     if (!listEl) return;
 
+    const restoreState = action.dataset.bgmState === 'retry' ? 'retry' : 'load';
     action.dataset.bgmLoading = '1';
     setCollectionActionState(action, 'loading');
 
@@ -505,7 +505,6 @@ async function loadMoreBgm(action, options) {
 
     const type = listEl.dataset.type === 'watched' ? 'watched' : 'watching';
     const cate = normalizeCollectionCategory(listEl.dataset.cate);
-    const deferCoverLoading = Boolean(options && options.deferCoverLoading);
     const url = `${window.bgmBase}?from=${String(offset)}&type=${type}&cate=${cate}`;
     const controller = createRequestController();
 
@@ -524,10 +523,8 @@ async function loadMoreBgm(action, options) {
             fragment.appendChild(card);
         });
         listEl.insertBefore(fragment, action);
-        if (!deferCoverLoading) {
-            await waitForStableLayout();
-            cards.forEach(card => observePosterCover(card));
-        }
+        await waitForStableLayout();
+        cards.forEach(card => observePosterCover(card));
 
         const nextOffset = Number(data.next_offset);
         listEl.dataset.bgmOffset = String(Number.isInteger(nextOffset) && nextOffset >= offset
@@ -545,7 +542,12 @@ async function loadMoreBgm(action, options) {
             }
         }
     } catch (error) {
-        if (isAbortError(error)) return;
+        if (isAbortError(error)) {
+            if (action.isConnected) {
+                setCollectionActionState(action, restoreState);
+            }
+            return;
+        }
         console.error('加载更多番剧失败:', error);
         if (action.isConnected) {
             setCollectionActionState(action, 'retry');
@@ -559,9 +561,8 @@ async function loadMoreBgm(action, options) {
 /**
  * 加载并渲染标签页式追番日历
  * @param {HTMLElement} calContainer
- * @param {{deferCoverLoading?: boolean}} [options]
  */
-async function loadCalendar(calContainer, options) {
+async function loadCalendar(calContainer) {
     if (!calContainer || calContainer.dataset.bgmLoaded === '1' || calContainer.dataset.bgmLoading === '1') return;
     calContainer.dataset.bgmLoading = '1';
 
@@ -571,7 +572,6 @@ async function loadCalendar(calContainer, options) {
         ? previousElement
         : null;
     const url = `${window.bgmBase}?type=calendar&filter=${calFilter}`;
-    const deferCoverLoading = Boolean(options && options.deferCoverLoading);
     const controller = createRequestController();
     const getTodayId = () => {
         const jsDay = new Date().getDay();
@@ -648,8 +648,7 @@ async function loadCalendar(calContainer, options) {
                         img: item.img
                     }, {
                         type: 'calendar',
-                        imageUrl,
-                        deferCover: true
+                        imageUrl
                     });
                     panel.appendChild(bangumiItem);
                 });
@@ -682,9 +681,8 @@ async function loadCalendar(calContainer, options) {
         calContainer.appendChild(calendarHeader);
         calContainer.appendChild(panels);
 
-        if (!deferCoverLoading) {
-            loadCalendarPanelImages(panels.querySelector('.cal-panel.active'));
-        }
+        await waitForStableLayout();
+        loadCalendarPanelImages(panels.querySelector('.cal-panel.active'));
 
         if (activeTab && !window.matchMedia('(max-width: 480px)').matches) {
             activeTab.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' });
@@ -1004,20 +1002,15 @@ async function initCollection() {
 
         const action = createCollectionActionButton();
         item.appendChild(action);
-        initialLoads.push(loadMoreBgm(action, { deferCoverLoading: true }));
+        initialLoads.push(loadMoreBgm(action));
     });
 
     document.querySelectorAll('.bgm-calendar').forEach(calendar => {
-        initialLoads.push(loadCalendar(calendar, { deferCoverLoading: true }));
+        initialLoads.push(loadCalendar(calendar));
     });
 
     initialLoads.push(loadBgmCard());
     await Promise.allSettled(initialLoads);
-    await waitForStableLayout();
-
-    document.querySelectorAll('.bgm-collection .bgm-poster-card[data-cover-url], .cal-panel.active .bgm-poster-card[data-cover-url]').forEach(card => {
-        observePosterCover(card);
-    });
 }
 
 /**

@@ -20,14 +20,17 @@ if (!defined('__TYPECHO_ROOT_DIR__')) {
  *
  * @package PandaBangumi
  * @author 熊猫小A
- * @version 3.0.2.9
+ * @version 3.0.2.10
  * @link https://www.imalan.cn
  */
 
-define('PandaBangumi_Plugin_VERSION', '3.0.2.9');
+define('PandaBangumi_Plugin_VERSION', '3.0.2.10');
 
 class Plugin implements PluginInterface
 {
+    private static bool $headerInjected = false;
+    private static bool $footerInjected = false;
+
     /**
      * 激活插件方法,如果激活失败,直接抛出异常
      *
@@ -98,7 +101,7 @@ class Plugin implements PluginInterface
         echo htmlspecialchars('Bangumi 条目卡片：<div class="bgm-card" data-id="Subject ID"></div>');
         echo '<br>';
 
-        $ID = new Text('ID', NULL, '', _t('用户 ID'), _t('填写你的 Bangumi 主页链接 user 后面那一串数字'));
+        $ID = new Text('ID', NULL, '', _t('用户 ID'), _t('填写 Bangumi 主页链接 /user/ 后面的用户名或数字 ID。'));
         $form->addInput($ID);
 
         $ApiBase = new Text('ApiBase', NULL, '', _t('Bangumi API 镜像'), _t('只填写等价于 https://api.bgm.tv 的 HTTPS 镜像域名，例如 https://example.com；不要带 /v0 或其他路径，路径会被自动忽略。留空则使用官方 API，HTTP 地址会被忽略。'));
@@ -143,6 +146,11 @@ class Plugin implements PluginInterface
      */
     public static function header(): void
     {
+        if (self::$headerInjected) {
+            return;
+        }
+        self::$headerInjected = true;
+
         ob_start();
         Options::alloc()->index('/PandaBangumi');
         $bgmBase = ob_get_clean();
@@ -161,6 +169,11 @@ class Plugin implements PluginInterface
      */
     public static function footer(): void
     {
+        if (self::$footerInjected) {
+            return;
+        }
+        self::$footerInjected = true;
+
         echo '<script type="text/javascript" src="';
         Options::alloc()->pluginUrl('/PandaBangumi/js/PandaBangumi.js');
         echo '?v=' . PandaBangumi_Plugin_VERSION . '"></script>';

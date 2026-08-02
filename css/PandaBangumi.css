@@ -666,37 +666,30 @@
     mask-image: url('data:image/svg+xml;charset=UTF-8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12,5.5A3.5,3.5 0 0,1 15.5,9A3.5,3.5 0 0,1 12,12.5A3.5,3.5 0 0,1 8.5,9A3.5,3.5 0 0,1 12,5.5M5,8C5.56,8 6.08,8.15 6.53,8.42C6.38,8.8 6.28,9.21 6.24,9.65C5.83,9.26 5.44,9 5,9C5,8.67 5,8.34 5,8M19,8C18.66,8 18.33,8 18,8C18,8.34 18,8.67 18,9C17.56,9 17.17,9.26 16.76,9.65C16.72,9.21 16.62,8.8 16.47,8.42C16.92,8.15 17.44,8 18,8C18.34,8 18.67,8 19,8M12,14.5C14.67,14.5 20,15.84 20,18.5V20H4V18.5C4,15.84 9.33,14.5 12,14.5M4,18.5C4,18.5 4,18.5 4,18.5V18.5M12,3.5A5.5,5.5 0 0,0 6.5,9C6.5,10.12 6.94,11.13 7.64,11.9C6.16,13.24 4,14.62 4,17.5V18H20V17.5C20,14.62 17.84,13.24 16.36,11.9C17.06,11.13 17.5,10.12 17.5,9A5.5,5.5 0 0,0 12,3.5Z"/></svg>');
 }
 
-/* === 新增：手机端响应式布局 === */
+/* Bangumi 条目卡片手机端布局 */
 @media screen and (max-width: 767px) {
     .yue .bgm-card {
         max-width: 90%;
-        /* 手机上卡片宽度占屏幕90% */
     }
 
     .yue .bgm-card .bgm-card-link-wrapper {
         flex-direction: column !important;
-        /* 核心：改为垂直布局 */
     }
 
     .yue .bgm-card .bgm-card-poster {
         width: 100% !important;
-        /* 封面宽度占满 */
     }
 
     .yue .bgm-card .bgm-card-poster::before {
-        /* 在水平封面上，高宽比通常小于1，这里模拟一个常见的电影海报横版比例 */
-        padding-top: 56.25% !important;
-        /* 16:9 比例 */
+        padding-top: 150% !important;
     }
 
     .yue .bgm-card .bgm-card-poster img {
         border-radius: 4px 4px 0 0;
-        /* 仅保留顶部圆角 */
     }
 
     .yue .bgm-card .bgm-card-content {
         padding: 15px;
-        /* 调整内边距 */
     }
 
     .yue .bgm-card .bgm-card-title {
