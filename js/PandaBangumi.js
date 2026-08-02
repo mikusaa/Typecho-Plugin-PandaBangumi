@@ -2,7 +2,6 @@
  * PandaBangumi 全局状态
  */
 var PandaBangumiRuntime = window.PandaBangumi || {};
-var PandaBangumiCollectionPageSize = 12;
 PandaBangumiRuntime.controllers = PandaBangumiRuntime.controllers || new Set();
 PandaBangumiRuntime.initTimer = PandaBangumiRuntime.initTimer || null;
 PandaBangumiRuntime.bound = PandaBangumiRuntime.bound || false;
@@ -98,28 +97,6 @@ function loadCalendarPanelImages(panel) {
 }
 
 /**
- * 设置简单文本状态
- * @param {HTMLElement} el
- * @param {string} text
- */
-function setText(el, text) {
-    el.textContent = text;
-}
-
-/**
- * 设置加载动画
- * @param {HTMLElement} loader
- */
-function setLoading(loader) {
-    loader.textContent = '';
-    for (let i = 0; i < 3; i++) {
-        const dot = document.createElement('div');
-        dot.className = 'dot';
-        loader.appendChild(dot);
-    }
-}
-
-/**
  * 获取 JSON 响应
  * @param {string} url
  * @param {AbortSignal} [signal]
@@ -176,6 +153,14 @@ function createPosterCard(item, options) {
     const title = document.createElement('span');
     title.className = 'bgm-poster-card__title';
     title.textContent = displayName;
+
+    const score = Number(item.score || 0);
+    if (type === 'watched' && Number.isFinite(score) && score > 0) {
+        const scoreEl = document.createElement('span');
+        scoreEl.className = 'bgm-poster-card__score';
+        scoreEl.textContent = `★ ${score.toFixed(1)}`;
+        overlay.appendChild(scoreEl);
+    }
     overlay.appendChild(title);
 
     if (type === 'watching') {
@@ -200,64 +185,125 @@ function createPosterCard(item, options) {
 }
 
 /**
- * 加载更多番剧条目
- *
- * @param {HTMLElement} loader
+ * 设置列表操作卡状态
+ * @param {HTMLElement} action
+ * @param {'load'|'loading'|'retry'|'external'} state
  */
-async function loadMoreBgm(loader) {
-    if (!loader || loader.dataset.bgmLoading === '1') return;
-    loader.dataset.bgmLoading = '1';
-    loader.hidden = false;
-    setLoading(loader);
+function setCollectionActionState(action, state) {
+    const states = {
+        load: { icon: '→', label: '加载更多' },
+        loading: { icon: '', label: '加载中' },
+        retry: { icon: '↻', label: '重新加载' },
+        external: { icon: '↗', label: '在 Bangumi 查看更多' }
+    };
+    const content = states[state] || states.load;
 
-    const refId = loader.getAttribute('data-ref');
-    const listEl = refId ? document.getElementById(refId) : null;
-    if (!listEl) {
-        delete loader.dataset.bgmLoading;
-        setText(loader, '加载失败');
-        return;
+    action.className = `bgm-collection-action bgm-collection-action--${state}`;
+    action.textContent = '';
+    action.setAttribute('aria-label', content.label);
+    if (action instanceof HTMLButtonElement) {
+        action.disabled = state === 'loading';
+        action.setAttribute('aria-busy', state === 'loading' ? 'true' : 'false');
     }
 
-    let bgmCur = parseInt(listEl.getAttribute('bgmCur') || '0', 10);
-    if (Number.isNaN(bgmCur) || bgmCur < 0) {
-        bgmCur = 0;
+    const icon = document.createElement('span');
+    icon.className = 'bgm-collection-action__icon';
+    icon.setAttribute('aria-hidden', 'true');
+    icon.textContent = content.icon;
+    action.appendChild(icon);
+
+    const label = document.createElement('span');
+    label.className = 'bgm-collection-action__label';
+    label.textContent = content.label;
+    action.appendChild(label);
+}
+
+/**
+ * 创建可加载或重试的操作卡
+ * @returns {HTMLButtonElement}
+ */
+function createCollectionActionButton() {
+    const button = document.createElement('button');
+    button.type = 'button';
+    setCollectionActionState(button, 'loading');
+    button.addEventListener('click', () => loadMoreBgm(button));
+    return button;
+}
+
+/**
+ * 创建 Bangumi 收藏页链接卡
+ * @param {string} url
+ * @returns {HTMLAnchorElement|null}
+ */
+function createCollectionExternalLink(url) {
+    const href = safeHttpsUrl(url);
+    if (!href) return null;
+
+    const link = document.createElement('a');
+    link.href = href;
+    link.target = '_blank';
+    link.rel = 'noopener noreferrer';
+    setCollectionActionState(link, 'external');
+    return link;
+}
+
+/**
+ * 加载更多番剧条目
+ * @param {HTMLButtonElement} action
+ */
+async function loadMoreBgm(action) {
+    if (!action || action.dataset.bgmLoading === '1') return;
+    const listEl = action.closest('.bgm-collection');
+    if (!listEl) return;
+
+    action.dataset.bgmLoading = '1';
+    setCollectionActionState(action, 'loading');
+
+    let offset = parseInt(listEl.dataset.bgmOffset || '0', 10);
+    if (Number.isNaN(offset) || offset < 0) {
+        offset = 0;
     }
 
-    const type = listEl.getAttribute('data-type') === 'watched' ? 'watched' : 'watching';
-    const cate = listEl.getAttribute('data-cate') === 'real' ? 'real' : 'anime';
-    const url = `${window.bgmBase}?from=${String(bgmCur)}&type=${type}&cate=${cate}`;
+    const type = listEl.dataset.type === 'watched' ? 'watched' : 'watching';
+    const cate = listEl.dataset.cate === 'real' ? 'real' : 'anime';
+    const url = `${window.bgmBase}?from=${String(offset)}&type=${type}&cate=${cate}`;
     const controller = createRequestController();
 
     try {
         const data = await fetchJson(url, controller.signal);
-        if (!loader.isConnected || !listEl.isConnected) return;
-
-        if (!Array.isArray(data) || data.length < 1) {
-            loader.hidden = true;
-            return;
+        if (!action.isConnected || !listEl.isConnected) return;
+        if (!data || !Array.isArray(data.items) || typeof data.has_more !== 'boolean') {
+            throw new Error('返回的收藏分页数据无效');
         }
 
-        const items = data.slice(0, PandaBangumiCollectionPageSize);
-        items.forEach(item => {
-            listEl.appendChild(createPosterCard(item, { type }));
-            bgmCur++;
+        data.items.forEach(item => {
+            listEl.insertBefore(createPosterCard(item, { type }), action);
         });
 
-        listEl.setAttribute('bgmCur', String(bgmCur));
-        if (data.length > PandaBangumiCollectionPageSize) {
-            setText(loader, '加载更多');
+        const nextOffset = Number(data.next_offset);
+        listEl.dataset.bgmOffset = String(Number.isInteger(nextOffset) && nextOffset >= offset
+            ? nextOffset
+            : offset + data.items.length);
+
+        if (data.has_more) {
+            setCollectionActionState(action, 'load');
         } else {
-            loader.hidden = true;
+            const externalLink = createCollectionExternalLink(data.more_url);
+            if (externalLink) {
+                action.replaceWith(externalLink);
+            } else {
+                action.remove();
+            }
         }
     } catch (error) {
         if (isAbortError(error)) return;
         console.error('加载更多番剧失败:', error);
-        if (loader.isConnected) {
-            setText(loader, '加载失败');
+        if (action.isConnected) {
+            setCollectionActionState(action, 'retry');
         }
     } finally {
         removeRequestController(controller);
-        delete loader.dataset.bgmLoading;
+        delete action.dataset.bgmLoading;
     }
 }
 
@@ -293,17 +339,22 @@ async function loadCalendar(calContainer) {
 
         const panels = document.createElement('div');
         panels.className = 'cal-panels';
+        const shortWeekdayNames = ['', '周一', '周二', '周三', '周四', '周五', '周六', '周日'];
 
         (Array.isArray(data) ? data : []).forEach(day => {
             const dayId = String(day.id || '');
+            const fullDayName = String(day.date_cn || '');
             const tabButton = document.createElement('button');
             tabButton.className = 'cal-tab-button';
             tabButton.type = 'button';
-            tabButton.textContent = String(day.date_cn || '');
+            tabButton.textContent = shortWeekdayNames[Number(day.id)] || fullDayName;
+            tabButton.title = fullDayName;
+            tabButton.setAttribute('aria-label', fullDayName);
             tabButton.dataset.dayId = dayId;
             if (Number(day.id) === todayId) {
-                tabButton.classList.add('active');
+                tabButton.classList.add('active', 'is-today');
             }
+            tabButton.setAttribute('aria-pressed', Number(day.id) === todayId ? 'true' : 'false');
             tabs.appendChild(tabButton);
 
             const panel = document.createElement('div');
@@ -334,7 +385,7 @@ async function loadCalendar(calContainer) {
             } else {
                 const noItem = document.createElement('p');
                 noItem.className = 'cal-no-item';
-                noItem.textContent = '今日无更新';
+                noItem.textContent = '今天没有在追番哦～';
                 panel.appendChild(noItem);
             }
             panels.appendChild(panel);
@@ -361,9 +412,13 @@ async function loadCalendar(calContainer) {
         tabs.addEventListener('click', (e) => {
             if (e.target.matches('.cal-tab-button')) {
                 const dayId = e.target.dataset.dayId;
-                tabs.querySelectorAll('.cal-tab-button').forEach(btn => btn.classList.remove('active'));
+                tabs.querySelectorAll('.cal-tab-button').forEach(btn => {
+                    btn.classList.remove('active');
+                    btn.setAttribute('aria-pressed', 'false');
+                });
                 panels.querySelectorAll('.cal-panel').forEach(pnl => pnl.classList.remove('active'));
                 e.target.classList.add('active');
+                e.target.setAttribute('aria-pressed', 'true');
                 const targetPanel = Array.from(panels.querySelectorAll('.cal-panel')).find(panel => panel.dataset.dayId === dayId);
                 if (targetPanel) {
                     targetPanel.classList.add('active');
@@ -609,31 +664,20 @@ function appendMetaItem(container, iconClass, text) {
  * 初始化所有番剧列表
  */
 async function initCollection() {
-    let bgmIndex = 0;
     Array.from(document.querySelectorAll('.bgm-collection:not([data-bgm-initialized="1"])')).forEach(item => {
-        bgmIndex++;
         item.dataset.bgmInitialized = '1';
-        if (!item.id) {
-            item.id = 'bgm-collection-' + String(Date.now()) + '-' + String(bgmIndex);
-        }
+        item.dataset.bgmOffset = '0';
 
-        let loader = item.nextElementSibling && item.nextElementSibling.classList.contains('loader') && item.nextElementSibling.dataset.ref === item.id
+        const legacyLoader = item.nextElementSibling && item.nextElementSibling.classList.contains('loader')
             ? item.nextElementSibling
             : null;
-        if (!loader) {
-            loader = document.createElement('div');
-            loader.className = 'loader';
-            loader.dataset.ref = item.id;
-            item.insertAdjacentElement('afterend', loader);
+        if (legacyLoader) {
+            legacyLoader.remove();
         }
 
-        loader.className = 'loader';
-        loader.dataset.ref = item.id;
-        if (loader.dataset.bgmBound !== '1') {
-            loader.dataset.bgmBound = '1';
-            loader.addEventListener('click', () => loadMoreBgm(loader));
-        }
-        loadMoreBgm(loader);
+        const action = createCollectionActionButton();
+        item.appendChild(action);
+        loadMoreBgm(action);
     });
 
     document.querySelectorAll('.bgm-calendar').forEach(calendar => {

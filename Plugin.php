@@ -20,11 +20,11 @@ if (!defined('__TYPECHO_ROOT_DIR__')) {
  *
  * @package PandaBangumi
  * @author 熊猫小A
- * @version 3.0.2.2
+ * @version 3.0.2.3
  * @link https://www.imalan.cn
  */
 
-define('PandaBangumi_Plugin_VERSION', '3.0.2.2');
+define('PandaBangumi_Plugin_VERSION', '3.0.2.3');
 
 class Plugin implements PluginInterface
 {
@@ -108,7 +108,7 @@ class Plugin implements PluginInterface
         $ValidTimeSpan = new Text('ValidTimeSpan', NULL, '86400', _t('缓存过期时间'), _t('设置缓存过期时间，单位为秒，默认 24 小时。'));
         $form->addInput($ValidTimeSpan);
 
-        $Limit = new Text('Limit', NULL, '30', _t('已看列表数量限制'), _t('设置获取数量限制，不建议设置得太大，有被 Bangumi 拉黑的风险。'));
+        $Limit = new Text('Limit', NULL, '30', _t('追番列表数量上限'), _t('同时限制在看和已看列表，每类严格获取 0–300 条；设置过大可能增加 Bangumi API 请求频率。'));
         $form->addInput($Limit);
     }
 

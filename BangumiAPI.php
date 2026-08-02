@@ -9,6 +9,8 @@ class BangumiAPI
 {
     private const DEFAULT_API_BASE = 'https://api.bgm.tv';
     private const CALENDAR_IMAGE_VARIANT = 'large-v1';
+    private const COLLECTION_CACHE_VARIANT = 'score-v1';
+    private const COLLECTION_FETCH_PAGE_SIZE = 30;
     private const COVER_CACHE_MAX_BYTES = 5242880;
     private const COVER_CACHE_RETENTION = 7776000;
     private const COVER_MIME_TYPES = array(
@@ -191,63 +193,65 @@ class BangumiAPI
      * 获取收藏数据并格式化返回
      *
      * @param string $ID
-     * @param int $Offset
      * @param int $status 1:想看 2:看过 3:在看 4:搁置 5:抛弃
      * @param int $subject_type 1:book 2:anime 3:music 4:game 6:real
+     * @param int $userLimit
      * @return array
      * @throws Exception
      */
-    private static function __getCollectionRawData(string $ID, int $Offset = 0, int $status = 3, int $subject_type = 2): array
+    private static function __getCollectionRawData(string $ID, int $status, int $subject_type, int $userLimit): array
     {
-        $apiUrl = self::buildApiUrl('/v0/users/' . $ID . '/collections') . '?subject_type=' . $subject_type . '&type=' . $status . '&limit=30&offset=' . $Offset;
-        $json = self::curlFileGetContents($apiUrl);
-        if ($json === false) {
+        if ($ID === '' || $userLimit <= 0) {
             return array();
         }
 
-        if ($json == 'null') {
-            return array(); // 没有标记数据
-        }
-
-        $data = json_decode($json, true);
-        if (!is_array($data) || !isset($data['total'])) {
-            return array();
-        }
-
+        $offset = 0;
         $collections = array();
-
-        $total = $data['total'];
-        $limit = $data['limit'];
-        $offset = $data['offset'];
-        $list = $data['data'];
-
-        foreach ($list as $item) {
-            $subject = $item['subject'] ?? array();
-            $subjectId = (int)($subject['id'] ?? 0);
-            if ($subjectId <= 0) {
-                continue;
+        do {
+            $apiUrl = self::buildApiUrl('/v0/users/' . rawurlencode($ID) . '/collections')
+                . '?subject_type=' . $subject_type
+                . '&type=' . $status
+                . '&limit=' . self::COLLECTION_FETCH_PAGE_SIZE
+                . '&offset=' . $offset;
+            $json = self::curlFileGetContents($apiUrl);
+            if ($json === false || $json === 'null') {
+                break;
             }
 
-            $collect = array(
-                'name' => (string)($subject['name'] ?? ''),
-                'name_cn' => (string)($subject['name_cn'] ?? ''),
-                'url' => 'https://bgm.tv/subject/' . $subjectId,
-                'status' => (int)($item['ep_status'] ?? 0),
-                'count' => (int)($subject['eps'] ?? 0),
-                'air_date' => (string)($subject['date'] ?? ''),
-                'img' => (string)($subject['images']['large'] ?? ''),
-                'id' => $subjectId,
-            );
-            $collections[] = $collect;
-        }
+            $data = json_decode($json, true);
+            if (!is_array($data) || !isset($data['total'], $data['data']) || !is_array($data['data'])) {
+                break;
+            }
 
-        $userLimit = self::getIntOption('Limit', 30, 0, 300);
+            foreach ($data['data'] as $item) {
+                $subject = $item['subject'] ?? array();
+                $subjectId = (int)($subject['id'] ?? 0);
+                if ($subjectId <= 0) {
+                    continue;
+                }
 
-        if ($total > $limit + $offset && $userLimit > $limit + $offset) {
-            $collections = array_merge($collections, self::__getCollectionRawData($ID, $limit + $offset, $status, $subject_type));
-        }
+                $collections[] = array(
+                    'name' => (string)($subject['name'] ?? ''),
+                    'name_cn' => (string)($subject['name_cn'] ?? ''),
+                    'url' => 'https://bgm.tv/subject/' . $subjectId,
+                    'status' => (int)($item['ep_status'] ?? 0),
+                    'count' => (int)($subject['eps'] ?? 0),
+                    'air_date' => (string)($subject['date'] ?? ''),
+                    'img' => (string)($subject['images']['large'] ?? ''),
+                    'score' => (float)($subject['score'] ?? 0),
+                    'id' => $subjectId,
+                );
+                if (count($collections) >= $userLimit) {
+                    break 2;
+                }
+            }
 
-        return $collections;
+            $responseLimit = max(1, (int)($data['limit'] ?? self::COLLECTION_FETCH_PAGE_SIZE));
+            $offset = max($offset + $responseLimit, (int)($data['offset'] ?? $offset) + $responseLimit);
+            $hasMore = $offset < (int)$data['total'] && count($data['data']) > 0;
+        } while ($hasMore);
+
+        return array_slice($collections, 0, $userLimit);
     }
 
     /**
@@ -762,22 +766,71 @@ class BangumiAPI
     }
 
     /**
-     * 裁剪分页数据并返回 JSON
-     *
-     * @access private
-     * @param array $data
-     * @param int $PageSize
-     * @param int $From
-     * @return string
+     * 读取或刷新指定收藏状态的分类缓存
      */
-    private static function __sliceData(array $data, int $PageSize, int $From): string
+    private static function getTypedCollectionCache(string $ID, int $status, string $fileName, int $ValidTimeSpan): array
     {
-        $total = count($data);
-        if ($From < 0 || $From > $total) {
-            return self::encodeJson(array());
+        $filePath = self::getDataCachePath($fileName);
+        $userLimit = self::getIntOption('Limit', 30, 0, 300);
+        $userKey = hash('sha256', $ID);
+        $cache = self::__isCacheExpired($filePath, $ValidTimeSpan);
+
+        if (is_array($cache) && (
+            ($cache['data_variant'] ?? '') !== self::COLLECTION_CACHE_VARIANT
+            || (int)($cache['limit'] ?? -1) !== $userLimit
+            || (string)($cache['user_key'] ?? '') !== $userKey
+        )) {
+            $cache = 1;
         }
 
-        return self::encodeJson(array_slice($data, $From, $PageSize));
+        if ($cache == -1 || $cache == 1) {
+            $anime = self::__getCollectionRawData($ID, $status, 2, $userLimit);
+            $real = self::__getCollectionRawData($ID, $status, 6, $userLimit);
+            $cache = array(
+                'time' => time(),
+                'data_variant' => self::COLLECTION_CACHE_VARIANT,
+                'limit' => $userLimit,
+                'user_key' => $userKey,
+                'data' => array('anime' => $anime, 'real' => $real)
+            );
+            if ($userLimit > 0 && !count($anime) && !count($real)) {
+                $cache['time'] = 1;
+            }
+            self::__writeCache($filePath, $cache);
+        }
+
+        return self::__normalizeTypedCache($cache);
+    }
+
+    /**
+     * 构造对应收藏分类的 Bangumi 页面地址
+     */
+    private static function buildCollectionMoreUrl(string $ID, string $type, string $cate): string
+    {
+        if ($ID === '' || !in_array($cate, ['anime', 'real'], true)) {
+            return '';
+        }
+
+        $status = $type === 'watched' ? 'collect' : 'do';
+        return 'https://bgm.tv/' . $cate . '/list/' . rawurlencode($ID) . '/' . $status;
+    }
+
+    /**
+     * 构造前端分页对象
+     */
+    private static function buildCollectionPage(array $data, int $PageSize, int $From, string $moreUrl): array
+    {
+        $from = max(0, $From);
+        $pageSize = max(0, $PageSize);
+        $items = array_slice($data, $from, $pageSize);
+        $nextOffset = $from + count($items);
+
+        return array(
+            'items' => $items,
+            'next_offset' => $nextOffset,
+            'has_more' => $nextOffset < count($data),
+            'more_url' => $moreUrl
+        );
     }
 
     /**
@@ -890,32 +943,15 @@ class BangumiAPI
      */
     public static function updateWatchedCacheAndReturn(string $ID, int $PageSize, int $From, int $ValidTimeSpan): string
     {
-        $filePath = self::getDataCachePath('watched.json');
-        $cache = self::__isCacheExpired($filePath, $ValidTimeSpan);
-
-        // 缓存过期或缓存无效
-        if ($cache == -1 || $cache == 1) {
-            // 缓存无效，重新请求，数据写入
-            $watchedAnime = self::__getCollectionRawData($ID, 0, 2);
-            $watchedReal = self::__getCollectionRawData($ID, 0, 2, 6);
-
-            $cache = array('time' => time(), 'data' => array(
-                'anime' => $watchedAnime,
-                'real' => $watchedReal)
-            );
-            // 若全空，很可能是请求失败，则下次强制刷新
-            if (!count($watchedAnime) && !count($watchedReal)) {
-                $cache['time'] = 1;
-            }
-            self::__writeCache($filePath, $cache);
-        }
-
-        $cache = self::__normalizeTypedCache($cache);
+        $cache = self::getTypedCollectionCache($ID, 2, 'watched.json', $ValidTimeSpan);
         $cate = self::getCate();
-        if (!array_key_exists($cate, $cache['data']))
-            return self::encodeJson(array());
-
-        return self::__sliceData($cache['data'][$cate], $PageSize, $From);
+        $data = array_key_exists($cate, $cache['data']) ? $cache['data'][$cate] : array();
+        return self::encodeJson(self::buildCollectionPage(
+            $data,
+            $PageSize,
+            $From,
+            self::buildCollectionMoreUrl($ID, 'watched', $cate)
+        ));
     }
 
     /**
@@ -931,29 +967,15 @@ class BangumiAPI
      */
     public static function updateWatchingCacheAndReturn(string $ID, int $PageSize, int $From, int $ValidTimeSpan): string
     {
-        $filePath = self::getDataCachePath('watching.json');
-        $cache = self::__isCacheExpired($filePath, $ValidTimeSpan);
-
-        if ($cache == -1 || $cache == 1) {
-            // 缓存无效，重新请求，数据写入
-            $watchingAnime = self::__getCollectionRawData($ID);
-            $watchingReal = self::__getCollectionRawData($ID, 0, 3, 6);
-            $cache = array('time' => time(), 'data' => array(
-                'anime' => $watchingAnime,
-                'real' => $watchingReal
-            ));
-            if (!count($watchingAnime) && !count($watchingReal)) {
-                $cache['time'] = 1;
-            }
-            self::__writeCache($filePath, $cache);
-        }
-
-        $cache = self::__normalizeTypedCache($cache);
+        $cache = self::getTypedCollectionCache($ID, 3, 'watching.json', $ValidTimeSpan);
         $cate = self::getCate();
-        if (!array_key_exists($cate, $cache['data']))
-            return self::encodeJson(array());
-
-        return self::__sliceData($cache['data'][$cate], $PageSize, $From);
+        $data = array_key_exists($cate, $cache['data']) ? $cache['data'][$cate] : array();
+        return self::encodeJson(self::buildCollectionPage(
+            $data,
+            $PageSize,
+            $From,
+            self::buildCollectionMoreUrl($ID, 'watching', $cate)
+        ));
     }
 
     /**
@@ -997,10 +1019,11 @@ class BangumiAPI
             return self::encodeJson(self::prepareCalendarForOutput($cache['data']));
         }
 
-        $watchingAnimes = json_decode(self::updateWatchingCacheAndReturn($ID, 1000, 0, $ValidTimeSpan), true);
-        if (!is_array($watchingAnimes)) {
+        $watchingPage = json_decode(self::updateWatchingCacheAndReturn($ID, 1000, 0, $ValidTimeSpan), true);
+        if (!is_array($watchingPage) || !isset($watchingPage['items']) || !is_array($watchingPage['items'])) {
             return self::encodeJson(array());
         }
+        $watchingAnimes = $watchingPage['items'];
         $watchingAnimeIds = array_column($watchingAnimes, 'id');
 
         $cal = array();

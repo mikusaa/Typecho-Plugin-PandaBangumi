@@ -10,7 +10,9 @@
 
 使用方法：去 GitHub 上下载插件：[mikusaa/Typecho-Plugin-PandaBangumi](https://github.com/mikusaa/Typecho-Plugin-PandaBangumi)
 
-解压后把文件夹改名为 `PandaBangumi` ，上传到服务器 `usr/plugins` 目录下，在 Typecho 后台启用本插件，填写 ID（即用户主页链接后的那串数字）。番剧列表每次展示 12 条，仅在还有更多记录时显示“加载更多”。
+解压后把文件夹改名为 `PandaBangumi` ，上传到服务器 `usr/plugins` 目录下，在 Typecho 后台启用本插件，填写 ID（即用户主页链接后的那串数字）。番剧列表首批展示最多 11 部，并在网格末尾保留一张操作卡；后续每批加载最多 12 部。缓存内容耗尽或达到配置上限后，操作卡会变为“在 Bangumi 查看更多”。
+
+`追番列表数量上限` 同时作用于在看和已看列表，每类可设置为 `0–300` 条。插件会严格按该值截断本站列表；达到上限后仍可通过操作卡前往对应的 Bangumi 收藏页。
 
 如果服务器无法直接访问 Bangumi API，可以在插件设置的 `Bangumi API 镜像` 中填写等价于 `https://api.bgm.tv` 的 HTTPS 镜像域名，例如 `https://bgm-api.example.com`；留空则使用官方 API，HTTP 地址会被忽略。请只填写域名，不要带 `/v0` 或其他路径；如果误填了路径，插件会自动忽略路径。API 请求均由服务器发起，镜像地址不会输出到访客页面。
 

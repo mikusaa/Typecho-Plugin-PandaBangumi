@@ -20,6 +20,7 @@ if (!defined('__TYPECHO_ROOT_DIR__')) {
 
 class Action extends Contents implements ActionInterface
 {
+    private const COLLECTION_FIRST_PAGE_SIZE = 11;
     private const COLLECTION_PAGE_SIZE = 12;
 
     /**
@@ -71,10 +72,11 @@ class Action extends Contents implements ActionInterface
             return;
         }
 
+        $pageSize = $From <= 0 ? self::COLLECTION_FIRST_PAGE_SIZE : self::COLLECTION_PAGE_SIZE;
         if ($type == 'watching')
-            echo BangumiAPI::updateWatchingCacheAndReturn($ID, self::COLLECTION_PAGE_SIZE + 1, $From, $ValidTimeSpan);
+            echo BangumiAPI::updateWatchingCacheAndReturn($ID, $pageSize, $From, $ValidTimeSpan);
         elseif ($type == 'watched')
-            echo BangumiAPI::updateWatchedCacheAndReturn($ID, self::COLLECTION_PAGE_SIZE + 1, $From, $ValidTimeSpan);
+            echo BangumiAPI::updateWatchedCacheAndReturn($ID, $pageSize, $From, $ValidTimeSpan);
         elseif ($type == 'calendar')
             echo BangumiAPI::updateCalendarCacheAndReturn($ID, $ValidTimeSpan);
     }

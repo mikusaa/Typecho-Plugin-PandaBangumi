@@ -66,6 +66,15 @@
     -webkit-line-clamp: 2;
 }
 
+.bgm-poster-card__score {
+    display: block;
+    margin-bottom: 0.25rem;
+    color: #ffd166;
+    font-size: 0.75rem;
+    font-weight: 700;
+    line-height: 1.2;
+}
+
 .bgm-poster-card__progress-text {
     display: block;
     margin-top: 0.3rem;
@@ -98,6 +107,74 @@
     outline-offset: 3px;
 }
 
+.bgm-collection-action {
+    display: flex;
+    width: 100%;
+    aspect-ratio: 2 / 3;
+    align-items: center;
+    appearance: none;
+    background: #edf0f4;
+    border: 1px solid #dde2e8 !important;
+    border-radius: 8px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+    color: #596273 !important;
+    cursor: pointer;
+    flex-direction: column;
+    font: inherit;
+    justify-content: center;
+    padding: 1rem;
+    text-align: center;
+    text-decoration: none !important;
+    transition: background-color 0.3s ease, border-color 0.3s ease, box-shadow 0.3s ease, transform 0.3s ease;
+}
+
+.bgm-collection-action:disabled {
+    cursor: wait;
+}
+
+.bgm-collection-action__icon {
+    display: flex;
+    width: 44px;
+    height: 44px;
+    align-items: center;
+    justify-content: center;
+    margin-bottom: 0.75rem;
+    border-radius: 50%;
+    background: #fff;
+    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.1);
+    font-size: 1.4rem;
+    line-height: 1;
+    transition: transform 0.3s ease;
+}
+
+.bgm-collection-action__label {
+    max-width: 100%;
+    font-size: 0.85rem;
+    font-weight: 600;
+    line-height: 1.5;
+}
+
+.bgm-collection-action--loading .bgm-collection-action__icon {
+    width: 28px;
+    height: 28px;
+    border: 3px solid rgba(89, 98, 115, 0.2);
+    border-top-color: #e800a4;
+    background: transparent;
+    box-shadow: none;
+    animation: bgmActionSpin 0.8s linear infinite;
+}
+
+.bgm-collection-action:focus-visible {
+    outline: 3px solid #e800a4;
+    outline-offset: 3px;
+}
+
+@keyframes bgmActionSpin {
+    to {
+        transform: rotate(360deg);
+    }
+}
+
 @media (hover: hover) and (pointer: fine) {
     .bgm-poster-card:hover {
         transform: translateY(-3px);
@@ -111,6 +188,17 @@
     .bgm-poster-card:hover .bgm-poster-card__overlay,
     .bgm-poster-card:hover .bgm-poster-card__progress-track {
         opacity: 0;
+    }
+
+    .bgm-collection-action:not(:disabled):hover {
+        transform: translateY(-3px);
+        border-color: #cfd5dd !important;
+        background: #e5e9ee;
+        box-shadow: 0 7px 16px rgba(0, 0, 0, 0.14);
+    }
+
+    .bgm-collection-action:not(:disabled):hover .bgm-collection-action__icon {
+        transform: scale(1.06);
     }
 }
 
@@ -158,7 +246,11 @@
     max-width: 100%;
     overflow-x: auto;
     justify-content: flex-end;
-    border-bottom: 2px solid #f0f2f5;
+    width: max-content;
+    padding: 4px;
+    border: none;
+    border-radius: 8px;
+    background: #f0f2f5;
     margin: 0;
     gap: 0.2rem;
     -webkit-overflow-scrolling: touch;
@@ -172,17 +264,16 @@
 
 .cal-tab-button {
     flex-shrink: 0;
-    padding: 0.55rem 0.75rem;
+    padding: 0.45rem 0.7rem;
     font-size: 0.9rem;
     font-weight: 500;
     color: #555;
     background: none;
     border: none;
+    border-radius: 6px;
     cursor: pointer;
     position: relative;
-    transition: color 0.3s ease;
-    border-bottom: 3px solid transparent;
-    margin-bottom: -2px;
+    transition: color 0.25s ease, background-color 0.25s ease, box-shadow 0.25s ease;
 }
 
 .cal-tab-button:hover {
@@ -190,8 +281,13 @@
 }
 
 .cal-tab-button.active {
+    color: #333;
+    background: #fff;
+    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.12);
+}
+
+.cal-tab-button.is-today {
     color: #E800A4;
-    border-bottom-color: #E800A4;
 }
 
 .cal-panels {
@@ -460,110 +556,28 @@
     color: #e53935;
 }
 
-.loader {
-    text-align: center;
-    padding: 0.3em;
-    width: 6.5em;
-    margin: 1.2rem auto;
-    border: 3px solid rgba(0, 0, 0, 0.2);
-    color: #333;
-    transition: 0.3s ease all;
-    cursor: pointer;
-    white-space: nowrap;
-}
-
-.loader[hidden] {
-    display: none;
-}
-
-body.theme-dark .loader {
-    border: 3px solid rgba(255, 255, 255, 0.2);
-    color: #b0b0b0
-}
-
-.loader:hover,
-body.theme-dark .loader:hover {
-    border: 3px solid lightpink;
-    color: lightpink;
-}
-
-.dot {
-    width: 8px;
-    height: 8px;
-    background: lightpink;
-    border-radius: 100%;
-    display: inline-block;
-    -webkit-animation: slide 1s infinite;
-    animation: slide 1s infinite;
-    margin: 0 10px
-}
-
-.dot:nth-child(1) {
-    -webkit-animation-delay: .1s;
-    animation-delay: .1s;
-}
-
-.dot:nth-child(2) {
-    -webkit-animation-delay: .2s;
-    animation-delay: .2s;
-}
-
-.dot:nth-child(3) {
-    -webkit-animation-delay: .3s;
-    animation-delay: .3s;
-}
-
-@-webkit-keyframes slide {
-    0% {
-        -webkit-transform: scale(1);
-        transform: scale(1)
-    }
-
-    50% {
-        opacity: .3;
-        -webkit-transform: scale(2);
-        transform: scale(2)
-    }
-
-    100% {
-        -webkit-transform: scale(1);
-        transform: scale(1)
-    }
-}
-
-@keyframes slide {
-    0% {
-        -webkit-transform: scale(1);
-        transform: scale(1)
-    }
-
-    50% {
-        opacity: .3;
-        -webkit-transform: scale(2);
-        transform: scale(2)
-    }
-
-    100% {
-        -webkit-transform: scale(1);
-        transform: scale(1)
-    }
-}
-
-
 /* --- 夜间模式样式追加 --- */
 
 body.theme-dark .cal-tabs {
-    border-bottom-color: #333333;
+    background: #262628;
 }
 
 body.theme-dark .cal-tab-button {
     color: #a9a9a9;
 }
 
-body.theme-dark .cal-tab-button:hover,
+body.theme-dark .cal-tab-button:hover {
+    color: #ffffff;
+}
+
 body.theme-dark .cal-tab-button.active {
     color: #ffffff;
-    border-bottom-color: #ffffff;
+    background: #3a3a3c;
+    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.45);
+}
+
+body.theme-dark .cal-tab-button.is-today {
+    color: #ff69c8;
 }
 
 body.theme-dark .bgm-poster-card {
@@ -571,9 +585,33 @@ body.theme-dark .bgm-poster-card {
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.6);
 }
 
+body.theme-dark .bgm-collection-action {
+    border-color: #3a3a3c !important;
+    background: #2c2c2e;
+    color: #d1d1d6 !important;
+}
+
+body.theme-dark .bgm-collection-action__icon {
+    background: #3a3a3c;
+    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.4);
+}
+
+body.theme-dark .bgm-collection-action--loading .bgm-collection-action__icon {
+    border-color: rgba(209, 209, 214, 0.2);
+    border-top-color: #ff69c8;
+    background: transparent;
+    box-shadow: none;
+}
+
 @media (hover: hover) and (pointer: fine) {
     body.theme-dark .bgm-poster-card:hover {
         box-shadow: 0 7px 16px rgba(0, 0, 0, 0.7);
+    }
+
+    body.theme-dark .bgm-collection-action:not(:disabled):hover {
+        border-color: #505054 !important;
+        background: #343437;
+        box-shadow: 0 7px 16px rgba(0, 0, 0, 0.6);
     }
 }
 
