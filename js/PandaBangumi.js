@@ -86,10 +86,11 @@ function buildCalendarCoverUrl(item) {
 function loadCalendarPanelImages(panel) {
     if (!panel || panel.dataset.imagesLoaded === '1') return;
 
-    panel.querySelectorAll('.cal-bangumi-item[data-cover-url]').forEach(item => {
+    panel.querySelectorAll('.bgm-poster-card[data-cover-url]').forEach(item => {
         const imageUrl = String(item.dataset.coverUrl || '');
+        const cover = item.querySelector('.bgm-poster-card__cover');
         if (imageUrl) {
-            item.style.backgroundImage = `url("${imageUrl}")`;
+            cover.style.backgroundImage = `url("${imageUrl}")`;
         }
         delete item.dataset.coverUrl;
     });
@@ -133,61 +134,68 @@ async function fetchJson(url, signal) {
 }
 
 /**
- * 创建列表条目
+ * 创建通用封面卡片
  * @param {object} item
- * @param {string} type
+ * @param {{type: string, imageUrl?: string, deferCover?: boolean}} options
  * @returns {HTMLElement}
  */
-function createBgmItem(item, type) {
+function createPosterCard(item, options) {
+    const type = String(options && options.type || 'watched');
     const href = safeHttpsUrl(item.url) || 'https://bgm.tv/';
-    const imageUrl = safeHttpsUrl(item.img);
+    const requestedImageUrl = options && options.imageUrl || item.img;
+    const imageUrl = options && options.deferCover
+        ? String(requestedImageUrl || '')
+        : safeHttpsUrl(requestedImageUrl);
     const name = String(item.name || '');
-    const nameCn = String(item.name_cn || item.name || '');
+    const displayName = String(item.name_cn || item.name || '');
     const count = Number(item.count || 0);
     const epStatus = Math.max(0, Number(item.status || 0));
 
     const link = document.createElement('a');
-    link.className = 'bgm-item';
+    link.className = `bgm-poster-card bgm-poster-card--${type}`;
     link.dataset.id = String(item.id || '');
     link.href = href;
     link.target = '_blank';
     link.rel = 'noopener noreferrer';
+    link.title = name || displayName;
 
-    const thumb = document.createElement('div');
-    thumb.className = 'bgm-item-thumb';
+    const cover = document.createElement('span');
+    cover.className = 'bgm-poster-card__cover';
     if (imageUrl) {
-        thumb.style.backgroundImage = `url("${imageUrl}")`;
+        if (options && options.deferCover) {
+            link.dataset.coverUrl = imageUrl;
+        } else {
+            cover.style.backgroundImage = `url("${imageUrl}")`;
+        }
     }
-    link.appendChild(thumb);
+    link.appendChild(cover);
 
-    const info = document.createElement('div');
-    info.className = 'bgm-item-info';
+    const overlay = document.createElement('span');
+    overlay.className = 'bgm-poster-card__overlay';
 
-    const mainTitle = document.createElement('span');
-    mainTitle.className = 'bgm-item-title main';
-    mainTitle.textContent = name;
-    info.appendChild(mainTitle);
-
-    const subTitle = document.createElement('span');
-    subTitle.className = 'bgm-item-title';
-    subTitle.textContent = nameCn;
-    info.appendChild(subTitle);
+    const title = document.createElement('span');
+    title.className = 'bgm-poster-card__title';
+    title.textContent = displayName;
+    overlay.appendChild(title);
 
     if (type === 'watching') {
-        const statusContainer = document.createElement('div');
-        statusContainer.className = 'bgm-item-statusBar-container';
-
-        const statusBar = document.createElement('div');
-        statusBar.className = 'bgm-item-statusBar';
-        statusBar.style.width = count > 0 ? `${Math.min(100, epStatus / count * 100)}%` : '100%';
-        statusContainer.appendChild(statusBar);
-
         const total = count > 0 ? String(count) : '未知';
-        statusContainer.appendChild(document.createTextNode(`进度：${String(epStatus)} / ${total}`));
-        info.appendChild(statusContainer);
+        const progressText = document.createElement('span');
+        progressText.className = 'bgm-poster-card__progress-text';
+        progressText.textContent = `${String(epStatus)} / ${total}`;
+        overlay.appendChild(progressText);
+
+        const progressTrack = document.createElement('span');
+        progressTrack.className = 'bgm-poster-card__progress-track';
+
+        const progressBar = document.createElement('span');
+        progressBar.className = 'bgm-poster-card__progress-bar';
+        progressBar.style.width = count > 0 ? `${Math.min(100, epStatus / count * 100)}%` : '0';
+        progressTrack.appendChild(progressBar);
+        link.appendChild(progressTrack);
     }
 
-    link.appendChild(info);
+    link.appendChild(overlay);
     return link;
 }
 
@@ -231,7 +239,7 @@ async function loadMoreBgm(loader) {
 
         const items = data.slice(0, PandaBangumiCollectionPageSize);
         items.forEach(item => {
-            listEl.appendChild(createBgmItem(item, type));
+            listEl.appendChild(createPosterCard(item, { type }));
             bgmCur++;
         });
 
@@ -262,6 +270,10 @@ async function loadCalendar(calContainer) {
     calContainer.dataset.bgmLoading = '1';
 
     const calFilter = calContainer.getAttribute('data-filter') === 'watching' ? 'watching' : 'all';
+    const previousElement = calContainer.previousElementSibling;
+    const calendarHeading = previousElement && previousElement.matches('h1, h2, h3, h4, h5, h6')
+        ? previousElement
+        : null;
     const url = `${window.bgmBase}?type=calendar&filter=${calFilter}`;
     const controller = createRequestController();
     const getTodayId = () => {
@@ -307,21 +319,16 @@ async function loadCalendar(calContainer) {
                     const title = String(item.name_cn || item.name || '');
                     const href = safeHttpsUrl(item.url) || 'https://bgm.tv/';
                     const imageUrl = buildCalendarCoverUrl(item);
-                    const bangumiItem = document.createElement('a');
-                    bangumiItem.href = href;
-                    bangumiItem.target = '_blank';
-                    bangumiItem.rel = 'noopener noreferrer';
-                    bangumiItem.title = title;
-                    bangumiItem.className = 'cal-bangumi-item';
-                    if (imageUrl) {
-                        bangumiItem.dataset.coverUrl = imageUrl;
-                    }
-
-                    const titleOverlay = document.createElement('span');
-                    titleOverlay.className = 'cal-bangumi-title-overlay';
-                    titleOverlay.textContent = title;
-
-                    bangumiItem.appendChild(titleOverlay);
+                    const bangumiItem = createPosterCard({
+                        id: item.id,
+                        name: item.name,
+                        name_cn: title,
+                        url: href
+                    }, {
+                        type: 'calendar',
+                        imageUrl,
+                        deferCover: true
+                    });
                     panel.appendChild(bangumiItem);
                 });
             } else {
@@ -333,7 +340,15 @@ async function loadCalendar(calContainer) {
             panels.appendChild(panel);
         });
 
-        calContainer.appendChild(tabs);
+        const calendarHeader = document.createElement('div');
+        calendarHeader.className = 'bgm-calendar-header';
+        if (calendarHeading) {
+            calendarHeading.classList.add('bgm-calendar-title');
+            calendarHeader.appendChild(calendarHeading);
+        }
+        calendarHeader.appendChild(tabs);
+
+        calContainer.appendChild(calendarHeader);
         calContainer.appendChild(panels);
 
         loadCalendarPanelImages(panels.querySelector('.cal-panel.active'));
