@@ -82,6 +82,19 @@ class BangumiAPI
     }
 
     /**
+     * 获取符合 Bangumi API 要求的应用标识
+     */
+    private static function getUserAgent(): string
+    {
+        $version = defined('PandaBangumi_Plugin_VERSION')
+            ? (string)constant('PandaBangumi_Plugin_VERSION')
+            : 'dev';
+
+        return 'mikusa/PandaBangumi/' . $version
+            . ' (https://github.com/mikusaa/Typecho-Plugin-PandaBangumi)';
+    }
+
+    /**
      * JSON 编码
      *
      * @access public
@@ -176,7 +189,7 @@ class BangumiAPI
         curl_setopt($myCurl, CURLOPT_CONNECTTIMEOUT, 5);
         curl_setopt($myCurl, CURLOPT_TIMEOUT, 12);
         curl_setopt($myCurl, CURLOPT_REFERER, 'https://bgm.tv/');
-        curl_setopt($myCurl, CURLOPT_USERAGENT, 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36');
+        curl_setopt($myCurl, CURLOPT_USERAGENT, self::getUserAgent());
         $content = curl_exec($myCurl);
         $httpCode = (int)curl_getinfo($myCurl, CURLINFO_RESPONSE_CODE);
         if ($content === false || $httpCode < 200 || $httpCode >= 300) {
@@ -653,7 +666,7 @@ class BangumiAPI
         curl_setopt($curl, CURLOPT_TIMEOUT, 15);
         curl_setopt($curl, CURLOPT_FOLLOWLOCATION, false);
         curl_setopt($curl, CURLOPT_REFERER, 'https://bgm.tv/');
-        curl_setopt($curl, CURLOPT_USERAGENT, 'PandaBangumi/' . (defined('PandaBangumi_Plugin_VERSION') ? PandaBangumi_Plugin_VERSION : '3'));
+        curl_setopt($curl, CURLOPT_USERAGENT, self::getUserAgent());
         curl_setopt($curl, CURLOPT_WRITEFUNCTION, static function ($handle, string $chunk) use ($fileHandle, &$bytes): int {
             $length = strlen($chunk);
             if ($bytes + $length > self::COVER_CACHE_MAX_BYTES) {
