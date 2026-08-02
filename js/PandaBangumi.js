@@ -7,6 +7,7 @@ PandaBangumiRuntime.initTimer = PandaBangumiRuntime.initTimer || null;
 PandaBangumiRuntime.bound = PandaBangumiRuntime.bound || false;
 PandaBangumiRuntime.coverObserver = PandaBangumiRuntime.coverObserver || null;
 PandaBangumiRuntime.coverLoads = PandaBangumiRuntime.coverLoads || new Map();
+PandaBangumiRuntime.coverPreloadMargin = 0;
 window.PandaBangumi = PandaBangumiRuntime;
 
 /**
@@ -143,6 +144,22 @@ function loadPosterCover(card) {
 }
 
 /**
+ * 确认卡片当前仍处于封面预加载范围内
+ * @param {HTMLElement} card
+ * @returns {boolean}
+ */
+function isPosterCoverWithinRange(card) {
+    if (!card || !card.isConnected || card.getClientRects().length === 0) return false;
+
+    const rect = card.getBoundingClientRect();
+    const margin = PandaBangumiRuntime.coverPreloadMargin;
+    return rect.bottom >= -margin
+        && rect.top <= window.innerHeight + margin
+        && rect.right >= 0
+        && rect.left <= window.innerWidth;
+}
+
+/**
  * 获取共享封面观察器
  * @returns {IntersectionObserver|null}
  */
@@ -152,12 +169,12 @@ function getCoverObserver() {
 
     PandaBangumiRuntime.coverObserver = new IntersectionObserver(entries => {
         entries.forEach(entry => {
-            if (entry.isIntersecting) {
+            if (entry.isIntersecting && isPosterCoverWithinRange(entry.target)) {
                 loadPosterCover(entry.target);
             }
         });
     }, {
-        rootMargin: '300px 0px',
+        rootMargin: `${String(PandaBangumiRuntime.coverPreloadMargin)}px 0px`,
         threshold: 0.01
     });
     return PandaBangumiRuntime.coverObserver;
@@ -213,6 +230,18 @@ function loadCalendarPanelImages(panel) {
         observePosterCover(item);
     });
     panel.dataset.imagesLoaded = '1';
+}
+
+/**
+ * 等待批量内容完成布局
+ * @returns {Promise<void>}
+ */
+function waitForStableLayout() {
+    return new Promise(resolve => {
+        window.requestAnimationFrame(() => {
+            window.requestAnimationFrame(resolve);
+        });
+    });
 }
 
 /**
@@ -382,8 +411,9 @@ function createCollectionExternalLink(url) {
 /**
  * 加载更多番剧条目
  * @param {HTMLButtonElement} action
+ * @param {{deferCoverLoading?: boolean}} [options]
  */
-async function loadMoreBgm(action) {
+async function loadMoreBgm(action, options) {
     if (!action || action.dataset.bgmLoading === '1') return;
     const listEl = action.closest('.bgm-collection');
     if (!listEl) return;
@@ -398,6 +428,7 @@ async function loadMoreBgm(action) {
 
     const type = listEl.dataset.type === 'watched' ? 'watched' : 'watching';
     const cate = listEl.dataset.cate === 'real' ? 'real' : 'anime';
+    const deferCoverLoading = Boolean(options && options.deferCoverLoading);
     const url = `${window.bgmBase}?from=${String(offset)}&type=${type}&cate=${cate}`;
     const controller = createRequestController();
 
@@ -408,11 +439,18 @@ async function loadMoreBgm(action) {
             throw new Error('返回的收藏分页数据无效');
         }
 
+        const cards = [];
+        const fragment = document.createDocumentFragment();
         data.items.forEach(item => {
             const card = createPosterCard(item, { type });
-            listEl.insertBefore(card, action);
-            observePosterCover(card);
+            cards.push(card);
+            fragment.appendChild(card);
         });
+        listEl.insertBefore(fragment, action);
+        if (!deferCoverLoading) {
+            await waitForStableLayout();
+            cards.forEach(card => observePosterCover(card));
+        }
 
         const nextOffset = Number(data.next_offset);
         listEl.dataset.bgmOffset = String(Number.isInteger(nextOffset) && nextOffset >= offset
@@ -444,8 +482,9 @@ async function loadMoreBgm(action) {
 /**
  * 加载并渲染标签页式追番日历
  * @param {HTMLElement} calContainer
+ * @param {{deferCoverLoading?: boolean}} [options]
  */
-async function loadCalendar(calContainer) {
+async function loadCalendar(calContainer, options) {
     if (!calContainer || calContainer.dataset.bgmLoaded === '1' || calContainer.dataset.bgmLoading === '1') return;
     calContainer.dataset.bgmLoading = '1';
 
@@ -455,6 +494,7 @@ async function loadCalendar(calContainer) {
         ? previousElement
         : null;
     const url = `${window.bgmBase}?type=calendar&filter=${calFilter}`;
+    const deferCoverLoading = Boolean(options && options.deferCoverLoading);
     const controller = createRequestController();
     const getTodayId = () => {
         const jsDay = new Date().getDay();
@@ -564,7 +604,9 @@ async function loadCalendar(calContainer) {
         calContainer.appendChild(calendarHeader);
         calContainer.appendChild(panels);
 
-        loadCalendarPanelImages(panels.querySelector('.cal-panel.active'));
+        if (!deferCoverLoading) {
+            loadCalendarPanelImages(panels.querySelector('.cal-panel.active'));
+        }
 
         if (activeTab && !window.matchMedia('(max-width: 480px)').matches) {
             activeTab.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' });
@@ -849,6 +891,7 @@ function appendMetaItem(container, iconClass, text) {
  * 初始化所有番剧列表
  */
 async function initCollection() {
+    const initialLoads = [];
     Array.from(document.querySelectorAll('.bgm-collection:not([data-bgm-initialized="1"])')).forEach(item => {
         item.dataset.bgmInitialized = '1';
         item.dataset.bgmOffset = '0';
@@ -862,18 +905,20 @@ async function initCollection() {
 
         const action = createCollectionActionButton();
         item.appendChild(action);
-        loadMoreBgm(action);
+        initialLoads.push(loadMoreBgm(action, { deferCoverLoading: true }));
     });
 
     document.querySelectorAll('.bgm-calendar').forEach(calendar => {
-        loadCalendar(calendar);
+        initialLoads.push(loadCalendar(calendar, { deferCoverLoading: true }));
     });
+
+    initialLoads.push(loadBgmCard());
+    await Promise.allSettled(initialLoads);
+    await waitForStableLayout();
 
     document.querySelectorAll('.bgm-collection .bgm-poster-card[data-cover-url], .cal-panel.active .bgm-poster-card[data-cover-url]').forEach(card => {
         observePosterCover(card);
     });
-
-    await loadBgmCard();
 }
 
 /**
