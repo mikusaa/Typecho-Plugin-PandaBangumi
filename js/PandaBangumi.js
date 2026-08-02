@@ -66,6 +66,16 @@ function safeHttpsUrl(value) {
 }
 
 /**
+ * 标准化收藏分类
+ * @param {string} value
+ * @returns {'book'|'anime'|'game'|'real'}
+ */
+function normalizeCollectionCategory(value) {
+    const cate = String(value || '').toLowerCase();
+    return ['book', 'anime', 'game', 'real'].includes(cate) ? cate : 'anime';
+}
+
+/**
  * 构造本站日历封面地址
  * @param {object} item
  * @returns {string}
@@ -276,11 +286,12 @@ async function fetchJson(url, signal) {
 /**
  * 创建通用封面卡片
  * @param {object} item
- * @param {{type: string, imageUrl?: string, deferCover?: boolean}} options
+ * @param {{type: string, cate?: string, imageUrl?: string, deferCover?: boolean}} options
  * @returns {HTMLElement}
  */
 function createPosterCard(item, options) {
     const type = String(options && options.type || 'watched');
+    const cate = normalizeCollectionCategory(options && options.cate);
     const href = safeHttpsUrl(item.url) || 'https://bgm.tv/';
     const requestedImageUrl = options && options.imageUrl || item.img;
     const imageUrl = options && options.deferCover
@@ -324,11 +335,16 @@ function createPosterCard(item, options) {
     }
     overlay.appendChild(title);
 
-    if (type === 'watching') {
-        const total = count > 0 ? String(count) : '未知';
+    const isBook = cate === 'book';
+    const current = isBook ? Math.max(0, Number(item.vol_status || 0)) : epStatus;
+    const totalCount = isBook ? Math.max(0, Number(item.vol_count || 0)) : count;
+    const hasProgress = !isBook || current > 0 || totalCount > 0;
+    if (type === 'watching' && cate !== 'game' && hasProgress) {
+        const total = totalCount > 0 ? String(totalCount) : '未知';
+        const unit = isBook ? ' 册' : '';
         const progressText = document.createElement('span');
         progressText.className = 'bgm-poster-card__progress-text';
-        progressText.textContent = `${String(epStatus)} / ${total}`;
+        progressText.textContent = `${String(current)} / ${total}${unit}`;
         overlay.appendChild(progressText);
 
         const progressTrack = document.createElement('span');
@@ -336,7 +352,7 @@ function createPosterCard(item, options) {
 
         const progressBar = document.createElement('span');
         progressBar.className = 'bgm-poster-card__progress-bar';
-        progressBar.style.width = count > 0 ? `${Math.min(100, epStatus / count * 100)}%` : '0';
+        progressBar.style.width = totalCount > 0 ? `${Math.min(100, current / totalCount * 100)}%` : '0';
         progressTrack.appendChild(progressBar);
         link.appendChild(progressTrack);
     }
@@ -427,7 +443,7 @@ async function loadMoreBgm(action, options) {
     }
 
     const type = listEl.dataset.type === 'watched' ? 'watched' : 'watching';
-    const cate = listEl.dataset.cate === 'real' ? 'real' : 'anime';
+    const cate = normalizeCollectionCategory(listEl.dataset.cate);
     const deferCoverLoading = Boolean(options && options.deferCoverLoading);
     const url = `${window.bgmBase}?from=${String(offset)}&type=${type}&cate=${cate}`;
     const controller = createRequestController();
@@ -442,7 +458,7 @@ async function loadMoreBgm(action, options) {
         const cards = [];
         const fragment = document.createDocumentFragment();
         data.items.forEach(item => {
-            const card = createPosterCard(item, { type });
+            const card = createPosterCard(item, { type, cate });
             cards.push(card);
             fragment.appendChild(card);
         });
@@ -659,7 +675,7 @@ async function loadCalendar(calContainer, options) {
 }
 
 /**
- * 加载番剧卡片信息
+ * 加载 Bangumi 条目卡片信息
  */
 async function loadBgmCard() {
     const cards = document.querySelectorAll('.bgm-card:not([data-bgm-loaded="1"]):not([data-bgm-loading="1"])');
@@ -671,7 +687,7 @@ async function loadBgmCard() {
 }
 
 /**
- * 根据番剧ID渲染番剧卡片
+ * 根据 Subject ID 渲染 Bangumi 条目卡片
  *
  * @param {number|string} subjectId
  * @param {HTMLElement} cardElement
@@ -703,7 +719,7 @@ async function renderCard(subjectId, cardElement) {
             cardElement.appendChild(buildCardElement(data, safeSubjectId));
             cardElement.dataset.bgmLoaded = '1';
         } else {
-            throw new Error('返回的番剧数据无效');
+            throw new Error('返回的 Bangumi 条目数据无效');
         }
     } catch (error) {
         if (isAbortError(error)) return;
@@ -728,7 +744,7 @@ function renderCardError(cardElement, subjectId) {
     cardElement.textContent = '';
     const errorEl = document.createElement('div');
     errorEl.className = 'error-state';
-    errorEl.textContent = `无法加载番剧信息。请检查条目ID (${String(subjectId)}) 或网络连接。`;
+    errorEl.textContent = `无法加载条目信息。请检查 Subject ID (${String(subjectId)}) 或网络连接。`;
     cardElement.appendChild(errorEl);
 }
 
@@ -741,7 +757,16 @@ function renderCardError(cardElement, subjectId) {
 function findInfo(infobox, key) {
     if (!Array.isArray(infobox)) return '';
     const info = infobox.find(item => item && item.key === key);
-    return (info && info.value) ? String(info.value) : '';
+    if (!info || info.value === null || typeof info.value === 'undefined') return '';
+
+    const values = Array.isArray(info.value) ? info.value : [info.value];
+    return values.map(value => {
+        if (value === null || typeof value === 'undefined') return '';
+        if (typeof value === 'object') {
+            return String(value.v || value.k || '');
+        }
+        return String(value);
+    }).filter(Boolean).join('、');
 }
 
 /**
@@ -785,7 +810,7 @@ function buildCardElement(data, subjectId) {
     const score = scoreValue > 0 ? scoreValue.toFixed(1) : 'N/A';
     const ratingCount = Number(rating.total || 0);
     const airDate = String(data.date || '未知');
-    const totalEpisodes = findInfo(data.infobox, '话数') || String(data.total_episodes || '未知');
+    const subjectType = Number(data.type || 0);
     const collectionCount = Number(data.collection && data.collection.collect || 0);
 
     const wrapper = document.createElement('a');
@@ -797,7 +822,7 @@ function buildCardElement(data, subjectId) {
     const poster = document.createElement('div');
     poster.className = 'bgm-card-poster';
     const img = document.createElement('img');
-    img.alt = `${nameCN} Poster`;
+    img.alt = `${nameCN} 封面`;
     img.loading = 'lazy';
     img.decoding = 'async';
     if (posterUrl) {
@@ -833,7 +858,18 @@ function buildCardElement(data, subjectId) {
     const meta = document.createElement('div');
     meta.className = 'bgm-card-meta';
     appendMetaItem(meta, 'icon-calendar', airDate);
-    appendMetaItem(meta, 'icon-tv', `${totalEpisodes} 集`);
+    if (subjectType === 1) {
+        const volumeCount = Number(data.volumes || 0);
+        const volumes = volumeCount > 0 ? String(volumeCount) : findInfo(data.infobox, '册数');
+        if (volumes) appendMetaItem(meta, 'icon-book', `${volumes} 册`);
+    } else if (subjectType === 4) {
+        const platform = String(findInfo(data.infobox, '平台') || data.platform || '');
+        if (platform) appendMetaItem(meta, 'icon-game', platform);
+    } else if (subjectType === 2 || subjectType === 6) {
+        const totalEpisodes = findInfo(data.infobox, subjectType === 6 ? '集数' : '话数')
+            || String(data.total_episodes || '未知');
+        appendMetaItem(meta, 'icon-tv', `${totalEpisodes} 集`);
+    }
     appendMetaItem(meta, 'icon-collection', `${collectionCount} 人收藏`);
     content.appendChild(meta);
 

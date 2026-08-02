@@ -9,8 +9,14 @@ class BangumiAPI
 {
     private const DEFAULT_API_BASE = 'https://api.bgm.tv';
     private const CALENDAR_IMAGE_VARIANT = 'large-v1';
-    private const COLLECTION_CACHE_VARIANT = 'score-v1';
+    private const COLLECTION_CACHE_VARIANT = 'category-v2';
     private const COLLECTION_FETCH_PAGE_SIZE = 30;
+    private const COLLECTION_SUBJECT_TYPES = array(
+        'book' => 1,
+        'anime' => 2,
+        'game' => 4,
+        'real' => 6
+    );
     private const COVER_CACHE_MAX_BYTES = 5242880;
     private const COVER_CACHE_RETENTION = 7776000;
     private const COVER_MIME_TYPES = array(
@@ -20,7 +26,6 @@ class BangumiAPI
         'image/gif' => 'gif'
     );
     private const EMPTY_COLLECTION_CACHE = array('time' => 1, 'data' => array());
-    private const EMPTY_TYPED_CACHE = array('time' => 1, 'data' => array('anime' => array(), 'real' => array()));
     private static array $legacyCacheDirectoriesMigrated = array();
 
     /**
@@ -153,7 +158,7 @@ class BangumiAPI
     private static function getCate(): string
     {
         $cate = strtolower((string)($_GET['cate'] ?? 'anime'));
-        return in_array($cate, ['anime', 'real'], true) ? $cate : '';
+        return array_key_exists($cate, self::COLLECTION_SUBJECT_TYPES) ? $cate : '';
     }
 
     /**
@@ -248,7 +253,9 @@ class BangumiAPI
                     'name_cn' => (string)($subject['name_cn'] ?? ''),
                     'url' => 'https://bgm.tv/subject/' . $subjectId,
                     'status' => (int)($item['ep_status'] ?? 0),
+                    'vol_status' => (int)($item['vol_status'] ?? 0),
                     'count' => (int)($subject['eps'] ?? 0),
+                    'vol_count' => (int)($subject['volumes'] ?? 0),
                     'air_date' => (string)($subject['date'] ?? ''),
                     'img' => (string)($subject['images']['large'] ?? ''),
                     'score' => (float)($subject['score'] ?? 0),
@@ -492,7 +499,7 @@ class BangumiAPI
     }
 
     /**
-     * 获取番剧卡片缓存目录
+     * 获取 Bangumi 条目卡片缓存目录
      */
     private static function getSubjectCacheDirectory(): string
     {
@@ -741,28 +748,6 @@ class BangumiAPI
     }
 
     /**
-     * 标准化分类缓存结构
-     *
-     * @access private
-     * @param mixed $cache
-     * @return array
-     */
-    private static function __normalizeTypedCache(mixed $cache): array
-    {
-        if (!is_array($cache) || !isset($cache['data']) || !is_array($cache['data'])) {
-            return self::EMPTY_TYPED_CACHE;
-        }
-
-        foreach (['anime', 'real'] as $cate) {
-            if (!isset($cache['data'][$cate]) || !is_array($cache['data'][$cate])) {
-                $cache['data'][$cate] = array();
-            }
-        }
-
-        return $cache;
-    }
-
-    /**
      * 标准化列表缓存结构
      *
      * @access private
@@ -781,9 +766,20 @@ class BangumiAPI
     /**
      * 读取或刷新指定收藏状态的分类缓存
      */
-    private static function getTypedCollectionCache(string $ID, int $status, string $fileName, int $ValidTimeSpan): array
+    private static function getCategoryCollectionCache(
+        string $ID,
+        int $status,
+        string $fileName,
+        string $cate,
+        int $ValidTimeSpan
+    ): array
     {
-        $filePath = self::getDataCachePath($fileName);
+        if (!array_key_exists($cate, self::COLLECTION_SUBJECT_TYPES)) {
+            return self::EMPTY_COLLECTION_CACHE;
+        }
+
+        $cacheFileName = pathinfo($fileName, PATHINFO_FILENAME) . '-' . $cate . '.json';
+        $filePath = self::getDataCachePath($cacheFileName);
         $userLimit = self::getIntOption('Limit', 30, 0, 300);
         $userKey = hash('sha256', $ID);
         $cache = self::__isCacheExpired($filePath, $ValidTimeSpan);
@@ -792,27 +788,33 @@ class BangumiAPI
             ($cache['data_variant'] ?? '') !== self::COLLECTION_CACHE_VARIANT
             || (int)($cache['limit'] ?? -1) !== $userLimit
             || (string)($cache['user_key'] ?? '') !== $userKey
+            || (string)($cache['cate'] ?? '') !== $cate
         )) {
             $cache = 1;
         }
 
         if ($cache == -1 || $cache == 1) {
-            $anime = self::__getCollectionRawData($ID, $status, 2, $userLimit);
-            $real = self::__getCollectionRawData($ID, $status, 6, $userLimit);
+            $data = self::__getCollectionRawData(
+                $ID,
+                $status,
+                self::COLLECTION_SUBJECT_TYPES[$cate],
+                $userLimit
+            );
             $cache = array(
                 'time' => time(),
                 'data_variant' => self::COLLECTION_CACHE_VARIANT,
                 'limit' => $userLimit,
                 'user_key' => $userKey,
-                'data' => array('anime' => $anime, 'real' => $real)
+                'cate' => $cate,
+                'data' => $data
             );
-            if ($userLimit > 0 && !count($anime) && !count($real)) {
+            if ($userLimit > 0 && !count($data)) {
                 $cache['time'] = 1;
             }
             self::__writeCache($filePath, $cache);
         }
 
-        return self::__normalizeTypedCache($cache);
+        return self::__normalizeCollectionCache($cache);
     }
 
     /**
@@ -820,7 +822,7 @@ class BangumiAPI
      */
     private static function buildCollectionMoreUrl(string $ID, string $type, string $cate): string
     {
-        if ($ID === '' || !in_array($cate, ['anime', 'real'], true)) {
+        if ($ID === '' || !array_key_exists($cate, self::COLLECTION_SUBJECT_TYPES)) {
             return '';
         }
 
@@ -912,7 +914,7 @@ class BangumiAPI
     }
 
     /**
-     * 读取并更新番剧卡片数据缓存
+     * 读取并更新 Bangumi 条目卡片数据缓存
      */
     public static function updateSubjectCacheAndReturn(int $subjectId, int $ValidTimeSpan): string
     {
@@ -956,9 +958,9 @@ class BangumiAPI
      */
     public static function updateWatchedCacheAndReturn(string $ID, int $PageSize, int $From, int $ValidTimeSpan): string
     {
-        $cache = self::getTypedCollectionCache($ID, 2, 'watched.json', $ValidTimeSpan);
         $cate = self::getCate();
-        $data = array_key_exists($cate, $cache['data']) ? $cache['data'][$cate] : array();
+        $cache = self::getCategoryCollectionCache($ID, 2, 'watched.json', $cate, $ValidTimeSpan);
+        $data = $cache['data'];
         return self::encodeJson(self::buildCollectionPage(
             $data,
             $PageSize,
@@ -980,9 +982,9 @@ class BangumiAPI
      */
     public static function updateWatchingCacheAndReturn(string $ID, int $PageSize, int $From, int $ValidTimeSpan): string
     {
-        $cache = self::getTypedCollectionCache($ID, 3, 'watching.json', $ValidTimeSpan);
         $cate = self::getCate();
-        $data = array_key_exists($cate, $cache['data']) ? $cache['data'][$cate] : array();
+        $cache = self::getCategoryCollectionCache($ID, 3, 'watching.json', $cate, $ValidTimeSpan);
+        $data = $cache['data'];
         return self::encodeJson(self::buildCollectionPage(
             $data,
             $PageSize,

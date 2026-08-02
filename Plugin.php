@@ -20,11 +20,11 @@ if (!defined('__TYPECHO_ROOT_DIR__')) {
  *
  * @package PandaBangumi
  * @author 熊猫小A
- * @version 3.0.2.6
+ * @version 3.0.2.7
  * @link https://www.imalan.cn
  */
 
-define('PandaBangumi_Plugin_VERSION', '3.0.2.6');
+define('PandaBangumi_Plugin_VERSION', '3.0.2.7');
 
 class Plugin implements PluginInterface
 {
@@ -81,13 +81,21 @@ class Plugin implements PluginInterface
         echo '<br>';
         echo htmlspecialchars('在看三次元：<div data-type="watching" data-cate="real" class="bgm-collection"></div>');
         echo '<br>';
+        echo htmlspecialchars('在读书籍：<div data-type="watching" data-cate="book" class="bgm-collection"></div>');
+        echo '<br>';
+        echo htmlspecialchars('在玩游戏：<div data-type="watching" data-cate="game" class="bgm-collection"></div>');
+        echo '<br>';
         echo htmlspecialchars('已看动画：<div data-type="watched" data-cate="anime" class="bgm-collection"></div>');
         echo '<br>';
         echo htmlspecialchars('已看三次元：<div data-type="watched" data-cate="real" class="bgm-collection"></div>');
         echo '<br>';
+        echo htmlspecialchars('读过书籍：<div data-type="watched" data-cate="book" class="bgm-collection"></div>');
+        echo '<br>';
+        echo htmlspecialchars('玩过游戏：<div data-type="watched" data-cate="game" class="bgm-collection"></div>');
+        echo '<br>';
         echo htmlspecialchars('追番日历：<div data-filter="watching" class="bgm-calendar"></div>');
         echo '<br>';
-        echo htmlspecialchars('番剧卡片：<div class="bgm-card" data-id="番剧id"></div>');
+        echo htmlspecialchars('Bangumi 条目卡片：<div class="bgm-card" data-id="Subject ID"></div>');
         echo '<br>';
 
         $ID = new Text('ID', NULL, '', _t('用户 ID'), _t('填写你的 Bangumi 主页链接 user 后面那一串数字'));
@@ -108,7 +116,7 @@ class Plugin implements PluginInterface
         $ValidTimeSpan = new Text('ValidTimeSpan', NULL, '86400', _t('缓存过期时间'), _t('设置缓存过期时间，单位为秒，默认 24 小时。'));
         $form->addInput($ValidTimeSpan);
 
-        $Limit = new Text('Limit', NULL, '30', _t('追番列表数量上限'), _t('同时限制在看和已看列表，每类严格获取 0–300 条；设置过大可能增加 Bangumi API 请求频率。'));
+        $Limit = new Text('Limit', NULL, '30', _t('收藏列表数量上限'), _t('同时限制各分类的在看和已看列表，每类严格获取 0–300 条；设置过大可能增加 Bangumi API 请求频率。'));
         $form->addInput($Limit);
     }
 
