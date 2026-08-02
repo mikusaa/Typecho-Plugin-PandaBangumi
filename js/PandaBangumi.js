@@ -10,6 +10,15 @@ PandaBangumiRuntime.coverLoads = PandaBangumiRuntime.coverLoads || new Map();
 PandaBangumiRuntime.coverPreloadMargin = 0;
 window.PandaBangumi = PandaBangumiRuntime;
 
+if (!PandaBangumiRuntime.consoleLogged) {
+    console.log(
+        ' %c PandaBangumi %c https://blog.imalan.cn/archives/128/ ',
+        'color: #fff; background: #DF98A0; padding: 5px;',
+        'color: #fff; background: #1c2b36; padding: 5px;'
+    );
+    PandaBangumiRuntime.consoleLogged = true;
+}
+
 /**
  * 判断是否为请求取消
  * @param {unknown} error
