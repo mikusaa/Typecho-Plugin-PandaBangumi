@@ -24,6 +24,27 @@ class Action extends Contents implements ActionInterface
     private const COLLECTION_PAGE_SIZE = 12;
 
     /**
+     * 使用弱比较规则匹配 If-None-Match 中的实体标签
+     */
+    private static function matchesEntityTag(string $headerValue, string $etag): bool
+    {
+        foreach (explode(',', $headerValue) as $candidate) {
+            $candidate = trim($candidate);
+            if ($candidate === '*') {
+                return true;
+            }
+            if (str_starts_with($candidate, 'W/')) {
+                $candidate = substr($candidate, 2);
+            }
+            if (hash_equals($etag, $candidate)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
      * 返回请求的 HTML
      * @access public
      */
@@ -43,9 +64,11 @@ class Action extends Contents implements ActionInterface
         $From = (int)($_GET['from'] ?? 0);
 
         if ($type === 'cover') {
+            $subjectId = (int)($_GET['id'] ?? 0);
+            $version = strtolower((string)($_GET['v'] ?? ''));
             $cover = BangumiAPI::getCalendarCover(
-                (int)($_GET['id'] ?? 0),
-                strtolower((string)($_GET['v'] ?? ''))
+                $subjectId,
+                $version
             );
 
             if (($cover['status'] ?? 404) === 404) {
@@ -58,8 +81,30 @@ class Action extends Contents implements ActionInterface
                 return;
             }
 
-            $this->response->setHeader('Content-Type', $cover['mime']);
+            $etag = '"pb-cover-' . $subjectId . '-' . $version . '"';
+            $modifiedTime = @filemtime($cover['file']);
             $this->response->setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+            $this->response->setHeader('ETag', $etag);
+            if ($modifiedTime !== false) {
+                $this->response->setHeader('Last-Modified', gmdate('D, d M Y H:i:s', $modifiedTime) . ' GMT');
+            }
+
+            $ifNoneMatch = trim((string)$this->request->getHeader('If-None-Match', ''));
+            $notModified = $ifNoneMatch !== ''
+                ? self::matchesEntityTag($ifNoneMatch, $etag)
+                : false;
+            if (!$notModified && $ifNoneMatch === '' && $modifiedTime !== false) {
+                $ifModifiedSince = trim((string)$this->request->getHeader('If-Modified-Since', ''));
+                $modifiedSince = $ifModifiedSince !== '' ? strtotime($ifModifiedSince) : false;
+                $notModified = $modifiedSince !== false && $modifiedTime <= $modifiedSince;
+            }
+
+            if ($notModified) {
+                $this->response->setStatus(304);
+                return;
+            }
+
+            $this->response->setHeader('Content-Type', $cover['mime']);
             $this->response->setHeader('X-Content-Type-Options', 'nosniff');
             $this->response->throwFile($cover['file']);
             return;
