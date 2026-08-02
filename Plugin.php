@@ -20,11 +20,11 @@ if (!defined('__TYPECHO_ROOT_DIR__')) {
  *
  * @package PandaBangumi
  * @author 熊猫小A
- * @version 3.0.2.7
+ * @version 3.0.2.9
  * @link https://www.imalan.cn
  */
 
-define('PandaBangumi_Plugin_VERSION', '3.0.2.7');
+define('PandaBangumi_Plugin_VERSION', '3.0.2.9');
 
 class Plugin implements PluginInterface
 {
@@ -104,14 +104,17 @@ class Plugin implements PluginInterface
         $ApiBase = new Text('ApiBase', NULL, '', _t('Bangumi API 镜像'), _t('只填写等价于 https://api.bgm.tv 的 HTTPS 镜像域名，例如 https://example.com；不要带 /v0 或其他路径，路径会被自动忽略。留空则使用官方 API，HTTP 地址会被忽略。'));
         $form->addInput($ApiBase);
 
-        $ProxyImages = new Radio(
-            'ProxyImages',
-            array('0' => _t('关闭'), '1' => _t('开启')),
-            '0',
-            _t('通过 API 镜像获取日历封面'),
-            _t('开启后，服务器会通过上方 API 镜像的 /pic/* 路径下载日历封面并缓存在本地。请确保镜像同时代理 lain.bgm.tv/pic/*；访客不会直接访问镜像。')
+        $ImageMode = new Radio(
+            'ImageMode',
+            array(
+                'direct' => _t('直接加载 API 返回的图片'),
+                'cache' => _t('缓存到本站后加载')
+            ),
+            'direct',
+            _t('封面加载方式'),
+            _t('直接加载会原样使用 API 返回的图片地址；使用镜像时，建议由镜像代理图片并改写 JSON。本站缓存会隐藏图片来源，并应用于日历、收藏列表和单部条目卡片。')
         );
-        $form->addInput($ProxyImages);
+        $form->addInput($ImageMode);
 
         $ValidTimeSpan = new Text('ValidTimeSpan', NULL, '86400', _t('缓存过期时间'), _t('设置缓存过期时间，单位为秒，默认 24 小时。'));
         $form->addInput($ValidTimeSpan);

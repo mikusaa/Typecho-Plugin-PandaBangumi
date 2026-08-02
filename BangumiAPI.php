@@ -8,8 +8,10 @@ use Utils\Helper;
 class BangumiAPI
 {
     private const DEFAULT_API_BASE = 'https://api.bgm.tv';
-    private const CALENDAR_IMAGE_VARIANT = 'large-v1';
-    private const COLLECTION_CACHE_VARIANT = 'category-v2';
+    private const COVER_SIZE = 'large';
+    private const COVER_IMAGE_SIZES = array('small', 'grid', 'common', 'medium', 'large');
+    private const CALENDAR_IMAGE_VARIANT = 'images-v2';
+    private const COLLECTION_CACHE_VARIANT = 'category-v3';
     private const COLLECTION_FETCH_PAGE_SIZE = 30;
     private const COLLECTION_SUBJECT_TYPES = array(
         'book' => 1,
@@ -135,18 +137,59 @@ class BangumiAPI
     }
 
     /**
-     * 是否通过自定义 API 镜像下载日历封面
+     * 获取封面加载方式，并兼容一个版本的旧配置
      */
-    private static function useImageProxy(): bool
+    private static function getImageMode(): string
     {
         try {
             $pluginOptions = Helper::options()->plugin('PandaBangumi');
-            $enabled = (string)($pluginOptions->ProxyImages ?? '0') === '1';
+            $mode = strtolower(trim((string)($pluginOptions->ImageMode ?? '')));
+            if (in_array($mode, ['direct', 'cache'], true)) {
+                return $mode;
+            }
+
+            $legacyCache = (string)($pluginOptions->ProxyImages ?? '0') === '1'
+                || (string)($pluginOptions->CacheCollectionImages ?? '0') === '1';
+            return $legacyCache ? 'cache' : 'direct';
         } catch (\Throwable $e) {
-            $enabled = false;
+            return 'direct';
+        }
+    }
+
+    /**
+     * 是否将封面缓存到本站
+     */
+    private static function cacheImages(): bool
+    {
+        return self::getImageMode() === 'cache';
+    }
+
+    /**
+     * 保留 API 提供的已知尺寸封面地址
+     */
+    private static function extractCoverImages(mixed $images): array
+    {
+        if (!is_array($images)) {
+            return array();
         }
 
-        return $enabled && self::getApiBase() !== self::DEFAULT_API_BASE;
+        $result = array();
+        foreach (self::COVER_IMAGE_SIZES as $size) {
+            $url = trim((string)($images[$size] ?? ''));
+            if ($url !== '') {
+                $result[$size] = $url;
+            }
+        }
+
+        return $result;
+    }
+
+    /**
+     * 选择当前使用的封面尺寸，不回退到其他尺寸
+     */
+    private static function selectCoverUrl(mixed $images): string
+    {
+        return is_array($images) ? trim((string)($images[self::COVER_SIZE] ?? '')) : '';
     }
 
     /**
@@ -257,7 +300,7 @@ class BangumiAPI
                     'count' => (int)($subject['eps'] ?? 0),
                     'vol_count' => (int)($subject['volumes'] ?? 0),
                     'air_date' => (string)($subject['date'] ?? ''),
-                    'img' => (string)($subject['images']['large'] ?? ''),
+                    'images' => self::extractCoverImages($subject['images'] ?? array()),
                     'score' => (float)($subject['score'] ?? 0),
                     'id' => $subjectId,
                 );
@@ -307,7 +350,7 @@ class BangumiAPI
                     'name' => (string)($item['name'] ?? ''),
                     'name_cn' => (string)($item['name_cn'] ?? ''),
                     'url' => $id > 0 ? 'https://bgm.tv/subject/' . $id : '',
-                    'img' => (string)($item['images']['large'] ?? '')
+                    'images' => self::extractCoverImages($item['images'] ?? array())
                 ];
             }, $day['items'] ?? array());
             $calendar[] = array(
@@ -499,6 +542,14 @@ class BangumiAPI
     }
 
     /**
+     * 获取指定收藏状态和分类的缓存文件名
+     */
+    private static function getCollectionCacheFileName(string $list, string $cate): string
+    {
+        return $list . '-' . $cate . '.json';
+    }
+
+    /**
      * 获取 Bangumi 条目卡片缓存目录
      */
     private static function getSubjectCacheDirectory(): string
@@ -537,48 +588,107 @@ class BangumiAPI
     }
 
     /**
-     * 校验并规范化 Bangumi 封面地址
+     * 校验 API 返回的封面地址，不改写浏览器使用的 URL
      */
-    private static function normalizeCoverSource(string $source): ?array
+    private static function describeCoverSource(string $source): ?array
     {
-        $parts = parse_url(trim($source));
+        $source = trim($source);
+        if ($source === '' || preg_match('/[\x00-\x20\x7F]/', $source)) {
+            return null;
+        }
+
+        $parts = parse_url($source);
         if (!is_array($parts)) {
             return null;
         }
 
         $scheme = strtolower((string)($parts['scheme'] ?? ''));
-        $host = strtolower((string)($parts['host'] ?? ''));
-        $path = (string)($parts['path'] ?? '');
+        $host = strtolower(trim((string)($parts['host'] ?? ''), '[]'));
+        $port = isset($parts['port']) ? (int)$parts['port'] : null;
         if (
             !in_array($scheme, ['http', 'https'], true)
-            || $host !== 'lain.bgm.tv'
-            || !str_starts_with($path, '/pic/')
+            || $host === ''
             || isset($parts['user'])
             || isset($parts['pass'])
-            || isset($parts['port'])
             || isset($parts['fragment'])
-            || preg_match('#(?:^|/)\.\.(?:/|$)#', rawurldecode($path))
+            || ($port !== null && ($port < 1 || $port > 65535))
         ) {
             return null;
         }
 
-        $extension = strtolower(pathinfo($path, PATHINFO_EXTENSION));
-        if ($extension === 'jpeg') {
-            $extension = 'jpg';
+        $fetchUrl = $source;
+        if ($scheme === 'http' && $host === 'lain.bgm.tv' && $port === null) {
+            $fetchUrl = 'https://' . substr($source, strlen('http://'));
         }
-        if (!in_array($extension, array_values(self::COVER_MIME_TYPES), true)) {
+
+        return array(
+            'source_url' => $source,
+            'fetch_url' => $fetchUrl,
+            'version' => substr(hash('sha256', self::COVER_SIZE . "\n" . $source), 0, 16)
+        );
+    }
+
+    /**
+     * 检查 IP 是否为公网地址
+     */
+    private static function isPublicIp(string $ip): bool
+    {
+        return filter_var(
+            $ip,
+            FILTER_VALIDATE_IP,
+            FILTER_FLAG_NO_PRIV_RANGE | FILTER_FLAG_NO_RES_RANGE
+        ) !== false;
+    }
+
+    /**
+     * 解析并固定公网 HTTPS 下载目标，避免 DNS 重绑定访问内网
+     */
+    private static function resolveCoverFetchTarget(array $cover): ?array
+    {
+        $parts = parse_url((string)($cover['fetch_url'] ?? ''));
+        if (!is_array($parts)) {
             return null;
         }
 
-        $query = isset($parts['query']) && $parts['query'] !== '' ? '?' . $parts['query'] : '';
-        $directUrl = 'https://lain.bgm.tv' . $path . $query;
-        $fetchBase = self::useImageProxy() ? self::getApiBase() : 'https://lain.bgm.tv';
+        $scheme = strtolower((string)($parts['scheme'] ?? ''));
+        $host = strtolower(trim((string)($parts['host'] ?? ''), '[]'));
+        $port = isset($parts['port']) ? (int)$parts['port'] : 443;
+        if ($scheme !== 'https' || $host === '' || $port !== 443) {
+            return null;
+        }
 
+        if (filter_var($host, FILTER_VALIDATE_IP) !== false) {
+            return self::isPublicIp($host)
+                ? array('url' => $cover['fetch_url'], 'resolve' => array())
+                : null;
+        }
+
+        if (filter_var($host, FILTER_VALIDATE_DOMAIN, FILTER_FLAG_HOSTNAME) === false) {
+            return null;
+        }
+
+        $records = @dns_get_record($host, DNS_A | DNS_AAAA);
+        if (!is_array($records) || count($records) === 0) {
+            return null;
+        }
+
+        $addresses = array();
+        foreach ($records as $record) {
+            $ip = (string)($record['ip'] ?? $record['ipv6'] ?? '');
+            if ($ip === '' || !self::isPublicIp($ip)) {
+                return null;
+            }
+            $addresses[] = $ip;
+        }
+        if (count($addresses) === 0) {
+            return null;
+        }
+
+        $ip = $addresses[0];
+        $resolvedIp = str_contains($ip, ':') ? '[' . $ip . ']' : $ip;
         return array(
-            'direct_url' => $directUrl,
-            'fetch_url' => $fetchBase . $path . $query,
-            'extension' => $extension,
-            'version' => substr(hash('sha256', $directUrl), 0, 16)
+            'url' => $cover['fetch_url'],
+            'resolve' => array($host . ':443:' . $resolvedIp)
         );
     }
 
@@ -591,7 +701,7 @@ class BangumiAPI
         foreach (($cache['data'] ?? array()) as $day) {
             foreach (($day['items'] ?? array()) as $item) {
                 if ((int)($item['id'] ?? 0) === $subjectId) {
-                    return (string)($item['img'] ?? '');
+                    return self::selectCoverUrl($item['images'] ?? array());
                 }
             }
         }
@@ -600,11 +710,47 @@ class BangumiAPI
     }
 
     /**
-     * 获取封面缓存文件路径
+     * 获取收藏缓存中的封面源地址
      */
-    private static function getCoverCachePath(int $subjectId, array $cover): string
+    private static function findCollectionCoverSource(int $subjectId, string $list, string $cate): string
     {
-        return self::getCoverCacheDirectory() . '/' . $subjectId . '-' . $cover['version'] . '.' . $cover['extension'];
+        $cache = self::readCacheFile(self::getDataCachePath(self::getCollectionCacheFileName($list, $cate)));
+        if (
+            ($cache['data_variant'] ?? '') !== self::COLLECTION_CACHE_VARIANT
+            || (string)($cache['cate'] ?? '') !== $cate
+        ) {
+            return '';
+        }
+
+        foreach (($cache['data'] ?? array()) as $item) {
+            if ((int)($item['id'] ?? 0) === $subjectId) {
+                return self::selectCoverUrl($item['images'] ?? array());
+            }
+        }
+
+        return '';
+    }
+
+    /**
+     * 获取 Subject 缓存中的封面源地址
+     */
+    private static function findSubjectCoverSource(int $subjectId): string
+    {
+        $cache = self::readCacheFile(self::getSubjectCacheDirectory() . '/' . $subjectId . '.json');
+        $data = $cache['data'] ?? array();
+        if (!is_array($data) || (int)($data['id'] ?? 0) !== $subjectId) {
+            return '';
+        }
+
+        return self::selectCoverUrl($data['images'] ?? array());
+    }
+
+    /**
+     * 获取不带扩展名的封面缓存路径
+     */
+    private static function getCoverCacheBasePath(int $subjectId, array $cover): string
+    {
+        return self::getCoverCacheDirectory() . '/' . $subjectId . '-' . $cover['version'];
     }
 
     /**
@@ -627,16 +773,32 @@ class BangumiAPI
     }
 
     /**
+     * 查找与版本匹配且内容有效的本地封面
+     */
+    private static function findCachedCover(string $basePath): array
+    {
+        foreach (array_unique(array_values(self::COVER_MIME_TYPES)) as $extension) {
+            $filePath = $basePath . '.' . $extension;
+            $mime = self::getCachedCoverMime($filePath);
+            if ($mime !== '' && self::COVER_MIME_TYPES[$mime] === $extension) {
+                return array('file' => $filePath, 'mime' => $mime);
+            }
+        }
+
+        return array();
+    }
+
+    /**
      * 下载封面到临时文件并原子写入缓存
      */
-    private static function downloadCover(array $cover, string $cachePath): bool
+    private static function downloadCover(array $cover, string $basePath): bool
     {
-        $directory = dirname($cachePath);
+        $directory = dirname($basePath);
         if (!self::ensureCacheDirectory($directory)) {
             return false;
         }
 
-        $lockHandle = @fopen($cachePath . '.lock', 'c');
+        $lockHandle = @fopen($basePath . '.lock', 'c');
         if ($lockHandle === false || !flock($lockHandle, LOCK_EX)) {
             if (is_resource($lockHandle)) {
                 fclose($lockHandle);
@@ -644,16 +806,17 @@ class BangumiAPI
             return false;
         }
 
-        if (self::getCachedCoverMime($cachePath) !== '') {
+        if (count(self::findCachedCover($basePath)) > 0) {
             flock($lockHandle, LOCK_UN);
             fclose($lockHandle);
             return true;
         }
 
+        $target = self::resolveCoverFetchTarget($cover);
         $tmpFile = tempnam($directory, 'pb_cover_');
         $fileHandle = $tmpFile !== false ? @fopen($tmpFile, 'wb') : false;
-        $curl = $fileHandle !== false ? curl_init($cover['fetch_url']) : false;
-        if ($tmpFile === false || $fileHandle === false || $curl === false) {
+        $curl = $fileHandle !== false && $target !== null ? curl_init($target['url']) : false;
+        if ($tmpFile === false || $fileHandle === false || $curl === false || $target === null) {
             if (is_resource($fileHandle)) {
                 fclose($fileHandle);
             }
@@ -672,6 +835,12 @@ class BangumiAPI
         curl_setopt($curl, CURLOPT_CONNECTTIMEOUT, 5);
         curl_setopt($curl, CURLOPT_TIMEOUT, 15);
         curl_setopt($curl, CURLOPT_FOLLOWLOCATION, false);
+        if (defined('CURLOPT_PROTOCOLS') && defined('CURLPROTO_HTTPS')) {
+            curl_setopt($curl, CURLOPT_PROTOCOLS, CURLPROTO_HTTPS);
+        }
+        if (count($target['resolve']) > 0) {
+            curl_setopt($curl, CURLOPT_RESOLVE, $target['resolve']);
+        }
         curl_setopt($curl, CURLOPT_REFERER, 'https://bgm.tv/');
         curl_setopt($curl, CURLOPT_USERAGENT, self::getUserAgent());
         curl_setopt($curl, CURLOPT_WRITEFUNCTION, static function ($handle, string $chunk) use ($fileHandle, &$bytes): int {
@@ -694,13 +863,15 @@ class BangumiAPI
         curl_close($curl);
         fclose($fileHandle);
 
+        $mime = self::getCachedCoverMime($tmpFile);
         $valid = $result !== false
             && $httpCode >= 200
             && $httpCode < 300
             && $bytes > 0
-            && self::getCachedCoverMime($tmpFile) !== '';
+            && $mime !== '';
 
         if ($valid) {
+            $cachePath = $basePath . '.' . self::COVER_MIME_TYPES[$mime];
             $valid = @rename($tmpFile, $cachePath);
             if ($valid) {
                 @chmod($cachePath, 0644);
@@ -717,34 +888,78 @@ class BangumiAPI
     }
 
     /**
-     * 获取日历封面响应；失败时回退到 Bangumi 官方 HTTPS 地址
+     * 获取封面响应
      */
-    public static function getCalendarCover(int $subjectId, string $version): array
+    private static function getCoverResponse(int $subjectId, string $version, string $source): array
     {
         if ($subjectId <= 0 || !preg_match('/^[a-f0-9]{16}$/', $version)) {
             return array('status' => 404);
         }
 
-        $cover = self::normalizeCoverSource(self::findCalendarCoverSource($subjectId));
+        if (!self::cacheImages()) {
+            return array('status' => 404);
+        }
+
+        $cover = self::describeCoverSource($source);
         if ($cover === null || !hash_equals($cover['version'], $version)) {
             return array('status' => 404);
         }
 
-        $cachePath = self::getCoverCachePath($subjectId, $cover);
-        $mime = self::getCachedCoverMime($cachePath);
-        if ($mime === '' && self::downloadCover($cover, $cachePath)) {
-            $mime = self::getCachedCoverMime($cachePath);
+        $basePath = self::getCoverCacheBasePath($subjectId, $cover);
+        $cached = self::findCachedCover($basePath);
+        if (count($cached) === 0 && self::downloadCover($cover, $basePath)) {
+            $cached = self::findCachedCover($basePath);
         }
 
-        if ($mime === '') {
-            return array('status' => 302, 'redirect' => $cover['direct_url']);
+        if (count($cached) === 0) {
+            return array('status' => 404);
         }
 
         return array(
             'status' => 200,
-            'file' => $cachePath,
-            'mime' => $mime
+            'file' => $cached['file'],
+            'mime' => $cached['mime']
         );
+    }
+
+    /**
+     * 获取日历封面响应
+     */
+    public static function getCalendarCover(int $subjectId, string $version): array
+    {
+        return self::getCoverResponse($subjectId, $version, self::findCalendarCoverSource($subjectId));
+    }
+
+    /**
+     * 获取收藏列表封面响应
+     */
+    public static function getCollectionCover(
+        int $subjectId,
+        string $version,
+        string $list,
+        string $cate
+    ): array
+    {
+        if (
+            !in_array($list, ['watching', 'watched'], true)
+            || !array_key_exists($cate, self::COLLECTION_SUBJECT_TYPES)
+        ) {
+            return array('status' => 404);
+        }
+
+        return self::getCoverResponse(
+            $subjectId,
+            $version,
+            self::findCollectionCoverSource($subjectId, $list, $cate)
+        );
+    }
+
+    /**
+     * 获取单部 Subject 卡片封面响应
+     */
+    public static function getSubjectCover(int $subjectId, string $version): array
+    {
+        return self::getCoverResponse($subjectId, $version, self::findSubjectCoverSource($subjectId));
     }
 
     /**
@@ -778,7 +993,8 @@ class BangumiAPI
             return self::EMPTY_COLLECTION_CACHE;
         }
 
-        $cacheFileName = pathinfo($fileName, PATHINFO_FILENAME) . '-' . $cate . '.json';
+        $list = pathinfo($fileName, PATHINFO_FILENAME);
+        $cacheFileName = self::getCollectionCacheFileName($list, $cate);
         $filePath = self::getDataCachePath($cacheFileName);
         $userLimit = self::getIntOption('Limit', 30, 0, 300);
         $userKey = hash('sha256', $ID);
@@ -812,6 +1028,8 @@ class BangumiAPI
                 $cache['time'] = 1;
             }
             self::__writeCache($filePath, $cache);
+            $calendar = self::readCacheFile(self::getDataCachePath('calendar.json'));
+            self::cleanupCoverCache($calendar['data'] ?? array());
         }
 
         return self::__normalizeCollectionCache($cache);
@@ -849,7 +1067,42 @@ class BangumiAPI
     }
 
     /**
-     * 移除上游封面地址，仅向前端暴露本地封面版本
+     * 按当前加载方式准备一条封面数据
+     */
+    private static function prepareCoverItemForOutput(array $item): array
+    {
+        $source = self::selectCoverUrl($item['images'] ?? array());
+        $cover = self::describeCoverSource($source);
+        unset($item['images'], $item['img'], $item['cover_version']);
+
+        if (self::cacheImages()) {
+            $item['cover_version'] = $cover['version'] ?? '';
+        } else {
+            $item['img'] = $cover['source_url'] ?? '';
+        }
+
+        return $item;
+    }
+
+    /**
+     * 准备列表分页中的封面输出
+     */
+    private static function prepareCollectionPageForOutput(array $page): array
+    {
+        if (!isset($page['items']) || !is_array($page['items'])) {
+            return $page;
+        }
+
+        foreach ($page['items'] as &$item) {
+            $item = self::prepareCoverItemForOutput(is_array($item) ? $item : array());
+        }
+        unset($item);
+
+        return $page;
+    }
+
+    /**
+     * 准备日历封面输出
      */
     private static function prepareCalendarForOutput(array $calendar): array
     {
@@ -860,9 +1113,7 @@ class BangumiAPI
             }
 
             foreach ($day['items'] as &$item) {
-                $cover = self::normalizeCoverSource((string)($item['img'] ?? ''));
-                unset($item['img']);
-                $item['cover_version'] = $cover['version'] ?? '';
+                $item = self::prepareCoverItemForOutput(is_array($item) ? $item : array());
             }
             unset($item);
         }
@@ -872,7 +1123,25 @@ class BangumiAPI
     }
 
     /**
-     * 清理长期未引用的日历封面缓存
+     * 将条目使用的封面加入保留集合
+     */
+    private static function addReferencedCover(array &$referenced, array $item): void
+    {
+        $subjectId = (int)($item['id'] ?? 0);
+        $cover = self::describeCoverSource(self::selectCoverUrl($item['images'] ?? array()));
+        if ($subjectId <= 0 || $cover === null) {
+            return;
+        }
+
+        $name = basename(self::getCoverCacheBasePath($subjectId, $cover));
+        $referenced[$name . '.lock'] = true;
+        foreach (array_unique(array_values(self::COVER_MIME_TYPES)) as $extension) {
+            $referenced[$name . '.' . $extension] = true;
+        }
+    }
+
+    /**
+     * 清理长期未引用的封面缓存
      */
     private static function cleanupCoverCache(array $calendar): void
     {
@@ -884,17 +1153,40 @@ class BangumiAPI
         $referenced = array();
         foreach ($calendar as $day) {
             foreach (($day['items'] ?? array()) as $item) {
-                $subjectId = (int)($item['id'] ?? 0);
-                $cover = self::normalizeCoverSource((string)($item['img'] ?? ''));
-                if ($subjectId > 0 && $cover !== null) {
-                    $name = basename(self::getCoverCachePath($subjectId, $cover));
-                    $referenced[$name] = true;
-                    $referenced[$name . '.lock'] = true;
+                self::addReferencedCover($referenced, $item);
+            }
+        }
+
+        foreach (['watching', 'watched'] as $list) {
+            foreach (array_keys(self::COLLECTION_SUBJECT_TYPES) as $cate) {
+                $cache = self::readCacheFile(
+                    self::getDataCachePath(self::getCollectionCacheFileName($list, $cate))
+                );
+                foreach (($cache['data'] ?? array()) as $item) {
+                    self::addReferencedCover($referenced, $item);
                 }
             }
         }
 
         $cutoff = time() - self::COVER_CACHE_RETENTION;
+        $subjectDirectory = self::getSubjectCacheDirectory();
+        $subjectEntries = is_readable($subjectDirectory) ? scandir($subjectDirectory) : false;
+        if (is_array($subjectEntries)) {
+            foreach ($subjectEntries as $entry) {
+                $subjectPath = $subjectDirectory . '/' . $entry;
+                $modified = is_file($subjectPath) ? filemtime($subjectPath) : false;
+                if ($modified === false || $modified < $cutoff || pathinfo($entry, PATHINFO_EXTENSION) !== 'json') {
+                    continue;
+                }
+
+                $subjectCache = self::readCacheFile($subjectPath);
+                $subject = $subjectCache['data'] ?? array();
+                if (is_array($subject)) {
+                    self::addReferencedCover($referenced, $subject);
+                }
+            }
+        }
+
         $entries = scandir($directory);
         if ($entries === false) {
             return;
@@ -941,7 +1233,23 @@ class BangumiAPI
         }
 
         $cache = self::__normalizeCollectionCache($cache);
-        return self::encodeJson($cache['data']);
+        $data = $cache['data'];
+        if (!is_array($data)) {
+            return self::encodeJson(array());
+        }
+
+        $images = self::extractCoverImages($data['images'] ?? array());
+        $source = self::selectCoverUrl($images);
+        $cover = self::describeCoverSource($source);
+        if (self::cacheImages()) {
+            unset($data['images']);
+            $data['cover_version'] = $cover['version'] ?? '';
+        } else {
+            $data['images'] = $images;
+            unset($data['cover_version']);
+        }
+
+        return self::encodeJson($data);
     }
 
 
@@ -961,12 +1269,13 @@ class BangumiAPI
         $cate = self::getCate();
         $cache = self::getCategoryCollectionCache($ID, 2, 'watched.json', $cate, $ValidTimeSpan);
         $data = $cache['data'];
-        return self::encodeJson(self::buildCollectionPage(
+        $page = self::buildCollectionPage(
             $data,
             $PageSize,
             $From,
             self::buildCollectionMoreUrl($ID, 'watched', $cate)
-        ));
+        );
+        return self::encodeJson(self::prepareCollectionPageForOutput($page));
     }
 
     /**
@@ -985,12 +1294,13 @@ class BangumiAPI
         $cate = self::getCate();
         $cache = self::getCategoryCollectionCache($ID, 3, 'watching.json', $cate, $ValidTimeSpan);
         $data = $cache['data'];
-        return self::encodeJson(self::buildCollectionPage(
+        $page = self::buildCollectionPage(
             $data,
             $PageSize,
             $From,
             self::buildCollectionMoreUrl($ID, 'watching', $cate)
-        ));
+        );
+        return self::encodeJson(self::prepareCollectionPageForOutput($page));
     }
 
     /**

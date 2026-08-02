@@ -47,7 +47,7 @@ function abortPendingRequests() {
 }
 
 /**
- * 校验 HTTPS URL，并升级 Bangumi 官方封面地址
+ * 校验 HTTPS 链接
  * @param {string} value
  * @returns {string}
  */
@@ -55,11 +55,25 @@ function safeHttpsUrl(value) {
     const raw = String(value || '').trim();
     try {
         const url = new URL(raw);
-        if (url.protocol === 'http:' && url.hostname === 'lain.bgm.tv') {
-            url.protocol = 'https:';
-        }
-
         return url.protocol === 'https:' ? url.href : '';
+    } catch (error) {
+        return '';
+    }
+}
+
+/**
+ * 校验 API 返回的图片 URL，不改写域名、协议或路径
+ * @param {string} value
+ * @returns {string}
+ */
+function safeImageUrl(value) {
+    const raw = String(value || '').trim();
+    try {
+        const url = new URL(raw);
+        if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password) {
+            return '';
+        }
+        return raw;
     } catch (error) {
         return '';
     }
@@ -90,6 +104,52 @@ function buildCalendarCoverUrl(item) {
 
     const separator = base.includes('?') ? '&' : '?';
     return `${base}${separator}type=cover&id=${String(subjectId)}&v=${encodeURIComponent(version)}`;
+}
+
+/**
+ * 构造本站收藏列表封面地址
+ * @param {object} item
+ * @param {string} list
+ * @param {string} cate
+ * @returns {string}
+ */
+function buildCollectionCoverUrl(item, list, cate) {
+    const subjectId = Number(item && item.id);
+    const version = String(item && item.cover_version || '');
+    const normalizedCate = normalizeCollectionCategory(cate);
+    const normalizedList = list === 'watched' ? 'watched' : list === 'watching' ? 'watching' : '';
+    const base = String(window.bgmBase || '');
+    if (
+        !Number.isInteger(subjectId)
+        || subjectId <= 0
+        || !/^[a-f0-9]{16}$/.test(version)
+        || !normalizedList
+        || !base
+    ) {
+        return '';
+    }
+
+    const separator = base.includes('?') ? '&' : '?';
+    return `${base}${separator}type=cover&scope=collection&list=${normalizedList}`
+        + `&cate=${normalizedCate}&id=${String(subjectId)}&v=${encodeURIComponent(version)}`;
+}
+
+/**
+ * 构造本站 Subject 卡片封面地址
+ * @param {object} data
+ * @param {number} subjectId
+ * @returns {string}
+ */
+function buildSubjectCoverUrl(data, subjectId) {
+    const version = String(data && data.cover_version || '');
+    const base = String(window.bgmBase || '');
+    if (!Number.isInteger(subjectId) || subjectId <= 0 || !/^[a-f0-9]{16}$/.test(version) || !base) {
+        return '';
+    }
+
+    const separator = base.includes('?') ? '&' : '?';
+    return `${base}${separator}type=cover&scope=subject&id=${String(subjectId)}`
+        + `&v=${encodeURIComponent(version)}`;
 }
 
 /**
@@ -293,10 +353,11 @@ function createPosterCard(item, options) {
     const type = String(options && options.type || 'watched');
     const cate = normalizeCollectionCategory(options && options.cate);
     const href = safeHttpsUrl(item.url) || 'https://bgm.tv/';
-    const requestedImageUrl = options && options.imageUrl || item.img;
-    const imageUrl = options && options.deferCover
-        ? String(requestedImageUrl || '')
-        : safeHttpsUrl(requestedImageUrl);
+    const localImageUrl = buildCollectionCoverUrl(item, type, cate);
+    const requestedImageUrl = options && options.imageUrl
+        || localImageUrl
+        || item.img;
+    const imageUrl = safeImageUrl(requestedImageUrl);
     const name = String(item.name || '');
     const displayName = String(item.name_cn || item.name || '');
     const count = Number(item.count || 0);
@@ -578,12 +639,13 @@ async function loadCalendar(calContainer, options) {
                 itemsArray.forEach(item => {
                     const title = String(item.name_cn || item.name || '');
                     const href = safeHttpsUrl(item.url) || 'https://bgm.tv/';
-                    const imageUrl = buildCalendarCoverUrl(item);
+                    const imageUrl = buildCalendarCoverUrl(item) || safeImageUrl(item.img);
                     const bangumiItem = createPosterCard({
                         id: item.id,
                         name: item.name,
                         name_cn: title,
-                        url: href
+                        url: href,
+                        img: item.img
                     }, {
                         type: 'calendar',
                         imageUrl,
@@ -803,7 +865,8 @@ function getScoreDescriptionJs(score) {
 function buildCardElement(data, subjectId) {
     const nameCN = String(data.name_cn || data.name || '');
     const nameOriginal = data.name_cn ? String(data.name || '') : '';
-    const posterUrl = safeHttpsUrl(data.images && data.images.large);
+    const posterUrl = buildSubjectCoverUrl(data, subjectId)
+        || safeImageUrl(data.images && data.images.large);
     const bangumiUrl = `https://bgm.tv/subject/${subjectId}`;
     const rating = data.rating || {};
     const scoreValue = Number(rating.score || 0);

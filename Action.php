@@ -66,21 +66,26 @@ class Action extends Contents implements ActionInterface
         if ($type === 'cover') {
             $subjectId = (int)($_GET['id'] ?? 0);
             $version = strtolower((string)($_GET['v'] ?? ''));
-            $cover = BangumiAPI::getCalendarCover(
-                $subjectId,
-                $version
-            );
+            $scope = strtolower((string)($_GET['scope'] ?? 'calendar'));
+            if ($scope === 'collection') {
+                $cover = BangumiAPI::getCollectionCover(
+                    $subjectId,
+                    $version,
+                    strtolower((string)($_GET['list'] ?? '')),
+                    strtolower((string)($_GET['cate'] ?? ''))
+                );
+            } elseif ($scope === 'subject') {
+                $cover = BangumiAPI::getSubjectCover($subjectId, $version);
+            } elseif ($scope === 'calendar') {
+                $cover = BangumiAPI::getCalendarCover($subjectId, $version);
+            } else {
+                $cover = array('status' => 404);
+            }
 
             if (($cover['status'] ?? 404) === 404) {
                 $this->response->setStatus(404);
                 return;
             }
-            if (isset($cover['redirect'])) {
-                $this->response->setHeader('Cache-Control', 'no-store');
-                $this->response->redirect($cover['redirect']);
-                return;
-            }
-
             $etag = '"pb-cover-' . $subjectId . '-' . $version . '"';
             $modifiedTime = @filemtime($cover['file']);
             $this->response->setHeader('Cache-Control', 'public, max-age=31536000, immutable');
