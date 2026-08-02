@@ -2,6 +2,7 @@
  * PandaBangumi 全局状态
  */
 var PandaBangumiRuntime = window.PandaBangumi || {};
+var PandaBangumiCollectionPageSize = 12;
 PandaBangumiRuntime.controllers = PandaBangumiRuntime.controllers || new Set();
 PandaBangumiRuntime.initTimer = PandaBangumiRuntime.initTimer || null;
 PandaBangumiRuntime.bound = PandaBangumiRuntime.bound || false;
@@ -198,6 +199,7 @@ function createBgmItem(item, type) {
 async function loadMoreBgm(loader) {
     if (!loader || loader.dataset.bgmLoading === '1') return;
     loader.dataset.bgmLoading = '1';
+    loader.hidden = false;
     setLoading(loader);
 
     const refId = loader.getAttribute('data-ref');
@@ -222,18 +224,23 @@ async function loadMoreBgm(loader) {
         const data = await fetchJson(url, controller.signal);
         if (!loader.isConnected || !listEl.isConnected) return;
 
-        setText(loader, '加载更多');
         if (!Array.isArray(data) || data.length < 1) {
-            setText(loader, '没有了');
+            loader.hidden = true;
             return;
         }
 
-        data.forEach(item => {
+        const items = data.slice(0, PandaBangumiCollectionPageSize);
+        items.forEach(item => {
             listEl.appendChild(createBgmItem(item, type));
             bgmCur++;
         });
 
         listEl.setAttribute('bgmCur', String(bgmCur));
+        if (data.length > PandaBangumiCollectionPageSize) {
+            setText(loader, '加载更多');
+        } else {
+            loader.hidden = true;
+        }
     } catch (error) {
         if (isAbortError(error)) return;
         console.error('加载更多番剧失败:', error);

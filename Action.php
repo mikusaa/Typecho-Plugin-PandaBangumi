@@ -20,6 +20,8 @@ if (!defined('__TYPECHO_ROOT_DIR__')) {
 
 class Action extends Contents implements ActionInterface
 {
+    private const COLLECTION_PAGE_SIZE = 12;
+
     /**
      * 返回请求的 HTML
      * @access public
@@ -36,7 +38,6 @@ class Action extends Contents implements ActionInterface
         $options = Helper::options();
         $pluginOptions = $options->plugin('PandaBangumi');
         $ID = trim((string)($pluginOptions->ID ?? ''));
-        $PageSize = (int)($pluginOptions->PageSize ?? 6);
         $ValidTimeSpan = max(0, (int)($pluginOptions->ValidTimeSpan ?? 86400));
         $From = (int)($_GET['from'] ?? 0);
 
@@ -70,16 +71,10 @@ class Action extends Contents implements ActionInterface
             return;
         }
 
-        if ($PageSize == -1) {
-            $PageSize = 1000000;
-        } else {
-            $PageSize = max(1, min($PageSize, 100));
-        }
-
         if ($type == 'watching')
-            echo BangumiAPI::updateWatchingCacheAndReturn($ID, $PageSize, $From, $ValidTimeSpan);
+            echo BangumiAPI::updateWatchingCacheAndReturn($ID, self::COLLECTION_PAGE_SIZE + 1, $From, $ValidTimeSpan);
         elseif ($type == 'watched')
-            echo BangumiAPI::updateWatchedCacheAndReturn($ID, $PageSize, $From, $ValidTimeSpan);
+            echo BangumiAPI::updateWatchedCacheAndReturn($ID, self::COLLECTION_PAGE_SIZE + 1, $From, $ValidTimeSpan);
         elseif ($type == 'calendar')
             echo BangumiAPI::updateCalendarCacheAndReturn($ID, $ValidTimeSpan);
     }

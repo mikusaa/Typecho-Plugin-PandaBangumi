@@ -20,11 +20,11 @@ if (!defined('__TYPECHO_ROOT_DIR__')) {
  *
  * @package PandaBangumi
  * @author 熊猫小A
- * @version 3.0.6
+ * @version 3.0.2.1
  * @link https://www.imalan.cn
  */
 
-define('PandaBangumi_Plugin_VERSION', '3.0.6');
+define('PandaBangumi_Plugin_VERSION', '3.0.2.1');
 
 class Plugin implements PluginInterface
 {
@@ -104,9 +104,6 @@ class Plugin implements PluginInterface
             _t('开启后，服务器会通过上方 API 镜像的 /pic/* 路径下载日历封面并缓存在本地。请确保镜像同时代理 lain.bgm.tv/pic/*；访客不会直接访问镜像。')
         );
         $form->addInput($ProxyImages);
-
-        $PageSize = new Text('PageSize', NULL, '6', _t('每页数量'), _t('填写番剧列表每页数量，填写 -1 则在一页内全部显示，默认为 6.'));
-        $form->addInput($PageSize);
 
         $ValidTimeSpan = new Text('ValidTimeSpan', NULL, '86400', _t('缓存过期时间'), _t('设置缓存过期时间，单位为秒，默认 24 小时。'));
         $form->addInput($ValidTimeSpan);
