@@ -5,6 +5,8 @@ var PandaBangumiRuntime = window.PandaBangumi || {};
 PandaBangumiRuntime.controllers = PandaBangumiRuntime.controllers || new Set();
 PandaBangumiRuntime.initTimer = PandaBangumiRuntime.initTimer || null;
 PandaBangumiRuntime.bound = PandaBangumiRuntime.bound || false;
+PandaBangumiRuntime.coverObserver = PandaBangumiRuntime.coverObserver || null;
+PandaBangumiRuntime.coverLoads = PandaBangumiRuntime.coverLoads || new Map();
 window.PandaBangumi = PandaBangumiRuntime;
 
 /**
@@ -40,6 +42,7 @@ function removeRequestController(controller) {
 function abortPendingRequests() {
     PandaBangumiRuntime.controllers.forEach(controller => controller.abort());
     PandaBangumiRuntime.controllers.clear();
+    disconnectCoverLoading();
 }
 
 /**
@@ -79,21 +82,152 @@ function buildCalendarCoverUrl(item) {
 }
 
 /**
- * 加载指定星期面板的封面
+ * 完成单张背景封面的加载状态
+ * @param {HTMLElement} card
+ * @param {HTMLImageElement} image
+ * @param {'loaded'|'error'} state
+ */
+function finishPosterCoverLoad(card, image, state) {
+    if (PandaBangumiRuntime.coverLoads.get(card) !== image) return;
+
+    PandaBangumiRuntime.coverLoads.delete(card);
+    card.classList.remove('is-cover-pending', 'is-cover-loading');
+    card.classList.add(state === 'loaded' ? 'is-cover-loaded' : 'is-cover-error');
+    card.dataset.coverState = state;
+    delete card.dataset.coverUrl;
+}
+
+/**
+ * 预加载背景封面，成功后再应用到卡片
+ * @param {HTMLElement} card
+ */
+function loadPosterCover(card) {
+    if (!card || card.dataset.coverState === 'loading' || card.dataset.coverState === 'loaded') return;
+
+    const imageUrl = String(card.dataset.coverUrl || '');
+    const cover = card.querySelector('.bgm-poster-card__cover');
+    if (!imageUrl || !cover) {
+        card.classList.remove('is-cover-pending', 'is-cover-loading');
+        card.classList.add('is-cover-error');
+        card.dataset.coverState = 'error';
+        delete card.dataset.coverUrl;
+        return;
+    }
+
+    if (PandaBangumiRuntime.coverObserver) {
+        PandaBangumiRuntime.coverObserver.unobserve(card);
+    }
+
+    card.dataset.coverState = 'loading';
+    card.classList.remove('is-cover-pending', 'is-cover-error');
+    card.classList.add('is-cover-loading');
+
+    const image = new Image();
+    image.decoding = 'async';
+    image.onload = () => {
+        const applyCover = () => {
+            if (!card.isConnected || PandaBangumiRuntime.coverLoads.get(card) !== image) return;
+            cover.style.backgroundImage = `url("${imageUrl}")`;
+            finishPosterCoverLoad(card, image, 'loaded');
+        };
+
+        if (typeof image.decode === 'function') {
+            image.decode().then(applyCover, applyCover);
+        } else {
+            applyCover();
+        }
+    };
+    image.onerror = () => finishPosterCoverLoad(card, image, 'error');
+    PandaBangumiRuntime.coverLoads.set(card, image);
+    image.src = imageUrl;
+}
+
+/**
+ * 获取共享封面观察器
+ * @returns {IntersectionObserver|null}
+ */
+function getCoverObserver() {
+    if (!('IntersectionObserver' in window)) return null;
+    if (PandaBangumiRuntime.coverObserver) return PandaBangumiRuntime.coverObserver;
+
+    PandaBangumiRuntime.coverObserver = new IntersectionObserver(entries => {
+        entries.forEach(entry => {
+            if (entry.isIntersecting) {
+                loadPosterCover(entry.target);
+            }
+        });
+    }, {
+        rootMargin: '300px 0px',
+        threshold: 0.01
+    });
+    return PandaBangumiRuntime.coverObserver;
+}
+
+/**
+ * 将封面卡片加入视口懒加载
+ * @param {HTMLElement} card
+ */
+function observePosterCover(card) {
+    if (!card || !card.dataset.coverUrl || card.dataset.coverState === 'loaded' || card.dataset.coverState === 'loading') return;
+
+    card.dataset.coverState = 'pending';
+    card.classList.add('is-cover-pending');
+    const observer = getCoverObserver();
+    if (observer) {
+        observer.observe(card);
+    } else {
+        loadPosterCover(card);
+    }
+}
+
+/**
+ * 停止当前页面的封面观察与预加载
+ */
+function disconnectCoverLoading() {
+    if (PandaBangumiRuntime.coverObserver) {
+        PandaBangumiRuntime.coverObserver.disconnect();
+        PandaBangumiRuntime.coverObserver = null;
+    }
+
+    PandaBangumiRuntime.coverLoads.forEach((image, card) => {
+        image.onload = null;
+        image.onerror = null;
+        image.removeAttribute('src');
+        if (card.isConnected && card.dataset.coverUrl) {
+            card.dataset.coverState = 'pending';
+            card.classList.remove('is-cover-loading');
+            card.classList.add('is-cover-pending');
+        }
+    });
+    PandaBangumiRuntime.coverLoads.clear();
+}
+
+/**
+ * 激活指定星期面板的视口懒加载
  * @param {HTMLElement} panel
  */
 function loadCalendarPanelImages(panel) {
-    if (!panel || panel.dataset.imagesLoaded === '1') return;
+    if (!panel) return;
 
     panel.querySelectorAll('.bgm-poster-card[data-cover-url]').forEach(item => {
-        const imageUrl = String(item.dataset.coverUrl || '');
-        const cover = item.querySelector('.bgm-poster-card__cover');
-        if (imageUrl) {
-            cover.style.backgroundImage = `url("${imageUrl}")`;
-        }
-        delete item.dataset.coverUrl;
+        observePosterCover(item);
     });
     panel.dataset.imagesLoaded = '1';
+}
+
+/**
+ * 设置移动端星期选择器的展开状态
+ * @param {HTMLElement} picker
+ * @param {boolean} expanded
+ */
+function setWeekPickerExpanded(picker, expanded) {
+    if (!picker) return;
+
+    picker.classList.toggle('is-expanded', expanded);
+    const trigger = picker.querySelector('.cal-week-trigger');
+    if (trigger) {
+        trigger.setAttribute('aria-expanded', expanded ? 'true' : 'false');
+    }
 }
 
 /**
@@ -139,11 +273,9 @@ function createPosterCard(item, options) {
     const cover = document.createElement('span');
     cover.className = 'bgm-poster-card__cover';
     if (imageUrl) {
-        if (options && options.deferCover) {
-            link.dataset.coverUrl = imageUrl;
-        } else {
-            cover.style.backgroundImage = `url("${imageUrl}")`;
-        }
+        link.dataset.coverUrl = imageUrl;
+        link.dataset.coverState = 'pending';
+        link.classList.add('is-cover-pending');
     }
     link.appendChild(cover);
 
@@ -277,7 +409,9 @@ async function loadMoreBgm(action) {
         }
 
         data.items.forEach(item => {
-            listEl.insertBefore(createPosterCard(item, { type }), action);
+            const card = createPosterCard(item, { type });
+            listEl.insertBefore(card, action);
+            observePosterCover(card);
         });
 
         const nextOffset = Number(data.next_offset);
@@ -337,6 +471,24 @@ async function loadCalendar(calContainer) {
         const tabs = document.createElement('div');
         tabs.className = 'cal-tabs';
 
+        const weekPicker = document.createElement('div');
+        weekPicker.className = 'cal-week-picker';
+
+        const weekTrigger = document.createElement('button');
+        weekTrigger.className = 'cal-week-trigger';
+        weekTrigger.type = 'button';
+        weekTrigger.setAttribute('aria-expanded', 'false');
+        weekTrigger.setAttribute('aria-label', '选择星期');
+
+        const weekTriggerLabel = document.createElement('span');
+        weekTriggerLabel.className = 'cal-week-trigger__label';
+        weekTrigger.appendChild(weekTriggerLabel);
+
+        const weekTriggerChevron = document.createElement('span');
+        weekTriggerChevron.className = 'cal-week-trigger__chevron';
+        weekTriggerChevron.setAttribute('aria-hidden', 'true');
+        weekTrigger.appendChild(weekTriggerChevron);
+
         const panels = document.createElement('div');
         panels.className = 'cal-panels';
         const shortWeekdayNames = ['', '周一', '周二', '周三', '周四', '周五', '周六', '周日'];
@@ -353,6 +505,7 @@ async function loadCalendar(calContainer) {
             tabButton.dataset.dayId = dayId;
             if (Number(day.id) === todayId) {
                 tabButton.classList.add('active', 'is-today');
+                tabButton.setAttribute('aria-current', 'date');
             }
             tabButton.setAttribute('aria-pressed', Number(day.id) === todayId ? 'true' : 'false');
             tabs.appendChild(tabButton);
@@ -397,17 +550,29 @@ async function loadCalendar(calContainer) {
             calendarHeading.classList.add('bgm-calendar-title');
             calendarHeader.appendChild(calendarHeading);
         }
-        calendarHeader.appendChild(tabs);
+        const activeTab = tabs.querySelector('.cal-tab-button.active');
+        if (activeTab) {
+            weekTriggerLabel.textContent = activeTab.textContent;
+            weekTrigger.setAttribute('aria-label', `选择星期，当前${activeTab.textContent}`);
+            weekTrigger.classList.toggle('is-today', activeTab.classList.contains('is-today'));
+        }
+
+        weekPicker.appendChild(weekTrigger);
+        weekPicker.appendChild(tabs);
+        calendarHeader.appendChild(weekPicker);
 
         calContainer.appendChild(calendarHeader);
         calContainer.appendChild(panels);
 
         loadCalendarPanelImages(panels.querySelector('.cal-panel.active'));
 
-        const activeTab = tabs.querySelector('.cal-tab-button.active');
-        if (activeTab) {
+        if (activeTab && !window.matchMedia('(max-width: 480px)').matches) {
             activeTab.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' });
         }
+
+        weekTrigger.addEventListener('click', () => {
+            setWeekPickerExpanded(weekPicker, !weekPicker.classList.contains('is-expanded'));
+        });
 
         tabs.addEventListener('click', (e) => {
             if (e.target.matches('.cal-tab-button')) {
@@ -419,10 +584,17 @@ async function loadCalendar(calContainer) {
                 panels.querySelectorAll('.cal-panel').forEach(pnl => pnl.classList.remove('active'));
                 e.target.classList.add('active');
                 e.target.setAttribute('aria-pressed', 'true');
+                weekTriggerLabel.textContent = e.target.textContent;
+                weekTrigger.setAttribute('aria-label', `选择星期，当前${e.target.textContent}`);
+                weekTrigger.classList.toggle('is-today', e.target.classList.contains('is-today'));
                 const targetPanel = Array.from(panels.querySelectorAll('.cal-panel')).find(panel => panel.dataset.dayId === dayId);
                 if (targetPanel) {
                     targetPanel.classList.add('active');
                     loadCalendarPanelImages(targetPanel);
+                }
+                setWeekPickerExpanded(weekPicker, false);
+                if (window.matchMedia('(max-width: 480px)').matches) {
+                    weekTrigger.focus({ preventScroll: true });
                 }
             }
         });
@@ -584,8 +756,21 @@ function buildCardElement(data, subjectId) {
     poster.className = 'bgm-card-poster';
     const img = document.createElement('img');
     img.alt = `${nameCN} Poster`;
+    img.loading = 'lazy';
+    img.decoding = 'async';
     if (posterUrl) {
+        poster.classList.add('is-cover-loading');
+        img.addEventListener('load', () => {
+            poster.classList.remove('is-cover-loading', 'is-cover-error');
+            poster.classList.add('is-cover-loaded');
+        }, { once: true });
+        img.addEventListener('error', () => {
+            poster.classList.remove('is-cover-loading', 'is-cover-loaded');
+            poster.classList.add('is-cover-error');
+        }, { once: true });
         img.src = posterUrl;
+    } else {
+        poster.classList.add('is-cover-error');
     }
     poster.appendChild(img);
     wrapper.appendChild(poster);
@@ -684,6 +869,10 @@ async function initCollection() {
         loadCalendar(calendar);
     });
 
+    document.querySelectorAll('.bgm-collection .bgm-poster-card[data-cover-url], .cal-panel.active .bgm-poster-card[data-cover-url]').forEach(card => {
+        observePosterCover(card);
+    });
+
     await loadBgmCard();
 }
 
@@ -712,6 +901,24 @@ if (!PandaBangumiRuntime.bound) {
 
     ['pjax:send', 'pjax:beforeReplace', 'turbo:before-render'].forEach(eventName => {
         document.addEventListener(eventName, abortPendingRequests);
+    });
+
+    document.addEventListener('click', event => {
+        document.querySelectorAll('.cal-week-picker.is-expanded').forEach(picker => {
+            if (!picker.contains(event.target)) {
+                setWeekPickerExpanded(picker, false);
+            }
+        });
+    });
+
+    document.addEventListener('keydown', event => {
+        if (event.key !== 'Escape') return;
+
+        document.querySelectorAll('.cal-week-picker.is-expanded').forEach(picker => {
+            setWeekPickerExpanded(picker, false);
+            const trigger = picker.querySelector('.cal-week-trigger');
+            if (trigger) trigger.focus({ preventScroll: true });
+        });
     });
 
     if (document.readyState !== 'loading') {
