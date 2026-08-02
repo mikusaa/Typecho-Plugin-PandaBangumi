@@ -43,18 +43,18 @@ function abortPendingRequests() {
 }
 
 /**
- * 校验 HTTPS URL
+ * 校验 HTTPS URL，并升级 Bangumi 官方封面地址
  * @param {string} value
  * @returns {string}
  */
 function safeHttpsUrl(value) {
     const raw = String(value || '').trim();
-    if (!raw.startsWith('https://')) {
-        return '';
-    }
-
     try {
         const url = new URL(raw);
+        if (url.protocol === 'http:' && url.hostname === 'lain.bgm.tv') {
+            url.protocol = 'https:';
+        }
+
         return url.protocol === 'https:' ? url.href : '';
     } catch (error) {
         return '';
@@ -62,33 +62,37 @@ function safeHttpsUrl(value) {
 }
 
 /**
- * 规范化 HTTPS origin，忽略用户误填的路径。
- * @param {string} value
+ * 构造本站日历封面地址
+ * @param {object} item
  * @returns {string}
  */
-function safeHttpsOrigin(value) {
-    const safeUrl = safeHttpsUrl(value);
-    if (!safeUrl) {
+function buildCalendarCoverUrl(item) {
+    const subjectId = Number(item && item.id);
+    const version = String(item && item.cover_version || '');
+    const base = String(window.bgmBase || '');
+    if (!Number.isInteger(subjectId) || subjectId <= 0 || !/^[a-f0-9]{16}$/.test(version) || !base) {
         return '';
     }
 
-    try {
-        return new URL(safeUrl).origin;
-    } catch (error) {
-        return '';
-    }
+    const separator = base.includes('?') ? '&' : '?';
+    return `${base}${separator}type=cover&id=${String(subjectId)}&v=${encodeURIComponent(version)}`;
 }
 
 /**
- * 构造 Bangumi API 请求地址
- * @param {string} path
- * @returns {string}
+ * 加载指定星期面板的封面
+ * @param {HTMLElement} panel
  */
-function buildBgmApiUrl(path) {
-    const apiBase = safeHttpsOrigin(window.bgmApiBase) || 'https://api.bgm.tv';
-    path = '/' + String(path || '').replace(/^\/+/, '');
+function loadCalendarPanelImages(panel) {
+    if (!panel || panel.dataset.imagesLoaded === '1') return;
 
-    return apiBase + path;
+    panel.querySelectorAll('.cal-bangumi-item[data-cover-url]').forEach(item => {
+        const imageUrl = String(item.dataset.coverUrl || '');
+        if (imageUrl) {
+            item.style.backgroundImage = `url("${imageUrl}")`;
+        }
+        delete item.dataset.coverUrl;
+    });
+    panel.dataset.imagesLoaded = '1';
 }
 
 /**
@@ -295,7 +299,7 @@ async function loadCalendar(calContainer) {
                 itemsArray.forEach(item => {
                     const title = String(item.name_cn || item.name || '');
                     const href = safeHttpsUrl(item.url) || 'https://bgm.tv/';
-                    const imageUrl = safeHttpsUrl(item.img);
+                    const imageUrl = buildCalendarCoverUrl(item);
                     const bangumiItem = document.createElement('a');
                     bangumiItem.href = href;
                     bangumiItem.target = '_blank';
@@ -303,7 +307,7 @@ async function loadCalendar(calContainer) {
                     bangumiItem.title = title;
                     bangumiItem.className = 'cal-bangumi-item';
                     if (imageUrl) {
-                        bangumiItem.style.backgroundImage = `url("${imageUrl}")`;
+                        bangumiItem.dataset.coverUrl = imageUrl;
                     }
 
                     const titleOverlay = document.createElement('span');
@@ -325,6 +329,8 @@ async function loadCalendar(calContainer) {
         calContainer.appendChild(tabs);
         calContainer.appendChild(panels);
 
+        loadCalendarPanelImages(panels.querySelector('.cal-panel.active'));
+
         const activeTab = tabs.querySelector('.cal-tab-button.active');
         if (activeTab) {
             activeTab.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' });
@@ -339,6 +345,7 @@ async function loadCalendar(calContainer) {
                 const targetPanel = Array.from(panels.querySelectorAll('.cal-panel')).find(panel => panel.dataset.dayId === dayId);
                 if (targetPanel) {
                     targetPanel.classList.add('active');
+                    loadCalendarPanelImages(targetPanel);
                 }
             }
         });
@@ -397,7 +404,7 @@ async function renderCard(subjectId, cardElement) {
     const controller = createRequestController();
 
     try {
-        const data = await fetchJson(buildBgmApiUrl('/v0/subjects/' + safeSubjectId), controller.signal);
+        const data = await fetchJson(`${window.bgmBase}?type=subject&id=${String(safeSubjectId)}`, controller.signal);
         if (!cardElement.isConnected) return;
 
         if (data.id === safeSubjectId) {

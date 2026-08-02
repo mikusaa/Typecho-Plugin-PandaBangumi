@@ -5,6 +5,7 @@ namespace TypechoPlugin\PandaBangumi;
 use Typecho\Plugin\PluginInterface;
 use Typecho\Plugin\Exception as PluginException;
 use Typecho\Widget\Helper\Form;
+use Typecho\Widget\Helper\Form\Element\Radio;
 use Typecho\Widget\Helper\Form\Element\Text;
 use Widget\Options;
 use Utils\Helper;
@@ -19,11 +20,11 @@ if (!defined('__TYPECHO_ROOT_DIR__')) {
  *
  * @package PandaBangumi
  * @author 熊猫小A
- * @version 3.0.4
+ * @version 3.0.6
  * @link https://www.imalan.cn
  */
 
-define('PandaBangumi_Plugin_VERSION', '3.0.4');
+define('PandaBangumi_Plugin_VERSION', '3.0.6');
 
 class Plugin implements PluginInterface
 {
@@ -95,6 +96,15 @@ class Plugin implements PluginInterface
         $ApiBase = new Text('ApiBase', NULL, '', _t('Bangumi API 镜像'), _t('只填写等价于 https://api.bgm.tv 的 HTTPS 镜像域名，例如 https://example.com；不要带 /v0 或其他路径，路径会被自动忽略。留空则使用官方 API，HTTP 地址会被忽略。'));
         $form->addInput($ApiBase);
 
+        $ProxyImages = new Radio(
+            'ProxyImages',
+            array('0' => _t('关闭'), '1' => _t('开启')),
+            '0',
+            _t('通过 API 镜像获取日历封面'),
+            _t('开启后，服务器会通过上方 API 镜像的 /pic/* 路径下载日历封面并缓存在本地。请确保镜像同时代理 lain.bgm.tv/pic/*；访客不会直接访问镜像。')
+        );
+        $form->addInput($ProxyImages);
+
         $PageSize = new Text('PageSize', NULL, '6', _t('每页数量'), _t('填写番剧列表每页数量，填写 -1 则在一页内全部显示，默认为 6.'));
         $form->addInput($PageSize);
 
@@ -129,12 +139,10 @@ class Plugin implements PluginInterface
         Options::alloc()->index('/PandaBangumi');
         $bgmBase = ob_get_clean();
 
-        $bgmApiBase = BangumiAPI::getApiBase();
-
         echo '<link rel="stylesheet" href="';
         Options::alloc()->pluginUrl('/PandaBangumi/css/PandaBangumi.css');
         echo '?v=' . PandaBangumi_Plugin_VERSION . '" />';
-        echo '<script>window.bgmBase=' . json_encode($bgmBase) . ';window.bgmApiBase=' . json_encode($bgmApiBase) . ';</script>';
+        echo '<script>window.bgmBase=' . json_encode($bgmBase) . ';</script>';
     }
 
     /**

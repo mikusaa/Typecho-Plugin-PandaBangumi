@@ -8,8 +8,18 @@ use Utils\Helper;
 class BangumiAPI
 {
     private const DEFAULT_API_BASE = 'https://api.bgm.tv';
+    private const CALENDAR_IMAGE_VARIANT = 'large-v1';
+    private const COVER_CACHE_MAX_BYTES = 5242880;
+    private const COVER_CACHE_RETENTION = 7776000;
+    private const COVER_MIME_TYPES = array(
+        'image/jpeg' => 'jpg',
+        'image/png' => 'png',
+        'image/webp' => 'webp',
+        'image/gif' => 'gif'
+    );
     private const EMPTY_COLLECTION_CACHE = array('time' => 1, 'data' => array());
     private const EMPTY_TYPED_CACHE = array('time' => 1, 'data' => array('anime' => array(), 'real' => array()));
+    private static array $legacyCacheDirectoriesMigrated = array();
 
     /**
      * 获取 Bangumi API 基础地址
@@ -102,6 +112,21 @@ class BangumiAPI
         }
 
         return max($min, min($value, $max));
+    }
+
+    /**
+     * 是否通过自定义 API 镜像下载日历封面
+     */
+    private static function useImageProxy(): bool
+    {
+        try {
+            $pluginOptions = Helper::options()->plugin('PandaBangumi');
+            $enabled = (string)($pluginOptions->ProxyImages ?? '0') === '1';
+        } catch (\Throwable $e) {
+            $enabled = false;
+        }
+
+        return $enabled && self::getApiBase() !== self::DEFAULT_API_BASE;
     }
 
     /**
@@ -338,6 +363,367 @@ class BangumiAPI
     }
 
     /**
+     * 创建插件缓存目录
+     */
+    private static function ensureCacheDirectory(string $directory): bool
+    {
+        if (is_dir($directory)) {
+            return is_writable($directory);
+        }
+
+        return @mkdir($directory, 0755, true) && is_writable($directory);
+    }
+
+    /**
+     * 获取新的缓存子目录
+     */
+    private static function getCacheDirectory(string $name): string
+    {
+        $directory = __DIR__ . '/cache/' . trim($name, '/');
+        self::ensureCacheDirectory($directory);
+        return $directory;
+    }
+
+    /**
+     * 将旧缓存文件原子迁移到新位置
+     */
+    private static function migrateLegacyCacheFile(string $legacyPath, string $targetPath): bool
+    {
+        if (is_file($targetPath)) {
+            return true;
+        }
+        if (!is_file($legacyPath) || !is_readable($legacyPath)) {
+            return false;
+        }
+
+        $directory = dirname($targetPath);
+        if (!self::ensureCacheDirectory($directory)) {
+            return false;
+        }
+        if (@rename($legacyPath, $targetPath)) {
+            return true;
+        }
+
+        $tmpFile = tempnam($directory, 'pb_migrate_');
+        if ($tmpFile === false || !@copy($legacyPath, $tmpFile)) {
+            if ($tmpFile !== false) {
+                @unlink($tmpFile);
+            }
+            return false;
+        }
+
+        $legacySize = filesize($legacyPath);
+        $tmpSize = filesize($tmpFile);
+        $legacyHash = hash_file('sha256', $legacyPath);
+        $tmpHash = hash_file('sha256', $tmpFile);
+        $valid = $legacySize !== false
+            && $tmpSize === $legacySize
+            && is_string($legacyHash)
+            && is_string($tmpHash)
+            && hash_equals($legacyHash, $tmpHash);
+
+        if ($valid && @rename($tmpFile, $targetPath)) {
+            @unlink($legacyPath);
+            return true;
+        }
+
+        @unlink($tmpFile);
+        return is_file($targetPath);
+    }
+
+    /**
+     * 迁移旧 json 目录中的分类缓存
+     */
+    private static function migrateLegacyCacheDirectory(string $name, string $targetDirectory): void
+    {
+        if (isset(self::$legacyCacheDirectoriesMigrated[$name])) {
+            return;
+        }
+        self::$legacyCacheDirectoriesMigrated[$name] = true;
+
+        $legacyDirectory = __DIR__ . '/json/' . $name;
+        if (!is_dir($legacyDirectory) || !is_readable($legacyDirectory)) {
+            return;
+        }
+
+        $entries = scandir($legacyDirectory);
+        if ($entries === false) {
+            return;
+        }
+
+        foreach ($entries as $entry) {
+            if ($entry === '.' || $entry === '..') {
+                continue;
+            }
+
+            $legacyPath = $legacyDirectory . '/' . $entry;
+            if (is_file($legacyPath)) {
+                self::migrateLegacyCacheFile($legacyPath, $targetDirectory . '/' . $entry);
+            }
+        }
+    }
+
+    /**
+     * 获取固定 JSON 数据缓存路径
+     */
+    private static function getDataCachePath(string $fileName): string
+    {
+        $fileName = basename($fileName);
+        $targetPath = self::getCacheDirectory('data') . '/' . $fileName;
+        self::migrateLegacyCacheFile(__DIR__ . '/json/' . $fileName, $targetPath);
+        return $targetPath;
+    }
+
+    /**
+     * 获取番剧卡片缓存目录
+     */
+    private static function getSubjectCacheDirectory(): string
+    {
+        $directory = self::getCacheDirectory('subjects');
+        self::migrateLegacyCacheDirectory('subjects', $directory);
+        return $directory;
+    }
+
+    /**
+     * 获取日历封面缓存目录
+     */
+    private static function getCoverCacheDirectory(): string
+    {
+        $directory = self::getCacheDirectory('covers');
+        self::migrateLegacyCacheDirectory('covers', $directory);
+        return $directory;
+    }
+
+    /**
+     * 读取缓存文件，不检查有效期
+     */
+    private static function readCacheFile(string $filePath): array
+    {
+        if (!is_file($filePath) || !is_readable($filePath)) {
+            return array();
+        }
+
+        $raw = file_get_contents($filePath);
+        if ($raw === false) {
+            return array();
+        }
+
+        $cache = json_decode($raw, true);
+        return is_array($cache) ? $cache : array();
+    }
+
+    /**
+     * 校验并规范化 Bangumi 封面地址
+     */
+    private static function normalizeCoverSource(string $source): ?array
+    {
+        $parts = parse_url(trim($source));
+        if (!is_array($parts)) {
+            return null;
+        }
+
+        $scheme = strtolower((string)($parts['scheme'] ?? ''));
+        $host = strtolower((string)($parts['host'] ?? ''));
+        $path = (string)($parts['path'] ?? '');
+        if (
+            !in_array($scheme, ['http', 'https'], true)
+            || $host !== 'lain.bgm.tv'
+            || !str_starts_with($path, '/pic/')
+            || isset($parts['user'])
+            || isset($parts['pass'])
+            || isset($parts['port'])
+            || isset($parts['fragment'])
+            || preg_match('#(?:^|/)\.\.(?:/|$)#', rawurldecode($path))
+        ) {
+            return null;
+        }
+
+        $extension = strtolower(pathinfo($path, PATHINFO_EXTENSION));
+        if ($extension === 'jpeg') {
+            $extension = 'jpg';
+        }
+        if (!in_array($extension, array_values(self::COVER_MIME_TYPES), true)) {
+            return null;
+        }
+
+        $query = isset($parts['query']) && $parts['query'] !== '' ? '?' . $parts['query'] : '';
+        $directUrl = 'https://lain.bgm.tv' . $path . $query;
+        $fetchBase = self::useImageProxy() ? self::getApiBase() : 'https://lain.bgm.tv';
+
+        return array(
+            'direct_url' => $directUrl,
+            'fetch_url' => $fetchBase . $path . $query,
+            'extension' => $extension,
+            'version' => substr(hash('sha256', $directUrl), 0, 16)
+        );
+    }
+
+    /**
+     * 获取日历缓存中的封面源地址
+     */
+    private static function findCalendarCoverSource(int $subjectId): string
+    {
+        $cache = self::readCacheFile(self::getDataCachePath('calendar.json'));
+        foreach (($cache['data'] ?? array()) as $day) {
+            foreach (($day['items'] ?? array()) as $item) {
+                if ((int)($item['id'] ?? 0) === $subjectId) {
+                    return (string)($item['img'] ?? '');
+                }
+            }
+        }
+
+        return '';
+    }
+
+    /**
+     * 获取封面缓存文件路径
+     */
+    private static function getCoverCachePath(int $subjectId, array $cover): string
+    {
+        return self::getCoverCacheDirectory() . '/' . $subjectId . '-' . $cover['version'] . '.' . $cover['extension'];
+    }
+
+    /**
+     * 校验本地封面并返回 MIME
+     */
+    private static function getCachedCoverMime(string $filePath): string
+    {
+        if (!is_file($filePath) || !is_readable($filePath)) {
+            return '';
+        }
+
+        $size = filesize($filePath);
+        if ($size === false || $size < 1 || $size > self::COVER_CACHE_MAX_BYTES) {
+            return '';
+        }
+
+        $imageInfo = @getimagesize($filePath);
+        $mime = strtolower((string)($imageInfo['mime'] ?? ''));
+        return array_key_exists($mime, self::COVER_MIME_TYPES) ? $mime : '';
+    }
+
+    /**
+     * 下载封面到临时文件并原子写入缓存
+     */
+    private static function downloadCover(array $cover, string $cachePath): bool
+    {
+        $directory = dirname($cachePath);
+        if (!self::ensureCacheDirectory($directory)) {
+            return false;
+        }
+
+        $lockHandle = @fopen($cachePath . '.lock', 'c');
+        if ($lockHandle === false || !flock($lockHandle, LOCK_EX)) {
+            if (is_resource($lockHandle)) {
+                fclose($lockHandle);
+            }
+            return false;
+        }
+
+        if (self::getCachedCoverMime($cachePath) !== '') {
+            flock($lockHandle, LOCK_UN);
+            fclose($lockHandle);
+            return true;
+        }
+
+        $tmpFile = tempnam($directory, 'pb_cover_');
+        $fileHandle = $tmpFile !== false ? @fopen($tmpFile, 'wb') : false;
+        $curl = $fileHandle !== false ? curl_init($cover['fetch_url']) : false;
+        if ($tmpFile === false || $fileHandle === false || $curl === false) {
+            if (is_resource($fileHandle)) {
+                fclose($fileHandle);
+            }
+            if ($tmpFile !== false) {
+                @unlink($tmpFile);
+            }
+            flock($lockHandle, LOCK_UN);
+            fclose($lockHandle);
+            return false;
+        }
+
+        $bytes = 0;
+        curl_setopt($curl, CURLOPT_SSL_VERIFYPEER, true);
+        curl_setopt($curl, CURLOPT_SSL_VERIFYHOST, 2);
+        curl_setopt($curl, CURLOPT_HEADER, false);
+        curl_setopt($curl, CURLOPT_CONNECTTIMEOUT, 5);
+        curl_setopt($curl, CURLOPT_TIMEOUT, 15);
+        curl_setopt($curl, CURLOPT_FOLLOWLOCATION, false);
+        curl_setopt($curl, CURLOPT_REFERER, 'https://bgm.tv/');
+        curl_setopt($curl, CURLOPT_USERAGENT, 'PandaBangumi/' . (defined('PandaBangumi_Plugin_VERSION') ? PandaBangumi_Plugin_VERSION : '3'));
+        curl_setopt($curl, CURLOPT_WRITEFUNCTION, static function ($handle, string $chunk) use ($fileHandle, &$bytes): int {
+            $length = strlen($chunk);
+            if ($bytes + $length > self::COVER_CACHE_MAX_BYTES) {
+                return 0;
+            }
+
+            $written = fwrite($fileHandle, $chunk);
+            if ($written === false) {
+                return 0;
+            }
+            $bytes += $written;
+            return $written;
+        });
+
+        $result = curl_exec($curl);
+        $httpCode = (int)curl_getinfo($curl, CURLINFO_RESPONSE_CODE);
+        $curlError = curl_error($curl);
+        curl_close($curl);
+        fclose($fileHandle);
+
+        $valid = $result !== false
+            && $httpCode >= 200
+            && $httpCode < 300
+            && $bytes > 0
+            && self::getCachedCoverMime($tmpFile) !== '';
+
+        if ($valid) {
+            $valid = @rename($tmpFile, $cachePath);
+            if ($valid) {
+                @chmod($cachePath, 0644);
+            }
+        }
+        if (!$valid) {
+            @unlink($tmpFile);
+            error_log('PandaBangumi cover request failed: HTTP ' . $httpCode . ' ' . $curlError);
+        }
+
+        flock($lockHandle, LOCK_UN);
+        fclose($lockHandle);
+        return $valid;
+    }
+
+    /**
+     * 获取日历封面响应；失败时回退到 Bangumi 官方 HTTPS 地址
+     */
+    public static function getCalendarCover(int $subjectId, string $version): array
+    {
+        if ($subjectId <= 0 || !preg_match('/^[a-f0-9]{16}$/', $version)) {
+            return array('status' => 404);
+        }
+
+        $cover = self::normalizeCoverSource(self::findCalendarCoverSource($subjectId));
+        if ($cover === null || !hash_equals($cover['version'], $version)) {
+            return array('status' => 404);
+        }
+
+        $cachePath = self::getCoverCachePath($subjectId, $cover);
+        $mime = self::getCachedCoverMime($cachePath);
+        if ($mime === '' && self::downloadCover($cover, $cachePath)) {
+            $mime = self::getCachedCoverMime($cachePath);
+        }
+
+        if ($mime === '') {
+            return array('status' => 302, 'redirect' => $cover['direct_url']);
+        }
+
+        return array(
+            'status' => 200,
+            'file' => $cachePath,
+            'mime' => $mime
+        );
+    }
+
+    /**
      * 标准化分类缓存结构
      *
      * @access private
@@ -394,6 +780,102 @@ class BangumiAPI
         return self::encodeJson(array_slice($data, $From, $PageSize));
     }
 
+    /**
+     * 移除上游封面地址，仅向前端暴露本地封面版本
+     */
+    private static function prepareCalendarForOutput(array $calendar): array
+    {
+        foreach ($calendar as &$day) {
+            if (!isset($day['items']) || !is_array($day['items'])) {
+                $day['items'] = array();
+                continue;
+            }
+
+            foreach ($day['items'] as &$item) {
+                $cover = self::normalizeCoverSource((string)($item['img'] ?? ''));
+                unset($item['img']);
+                $item['cover_version'] = $cover['version'] ?? '';
+            }
+            unset($item);
+        }
+        unset($day);
+
+        return $calendar;
+    }
+
+    /**
+     * 清理长期未引用的日历封面缓存
+     */
+    private static function cleanupCoverCache(array $calendar): void
+    {
+        $directory = self::getCoverCacheDirectory();
+        if (!is_dir($directory) || !is_readable($directory)) {
+            return;
+        }
+
+        $referenced = array();
+        foreach ($calendar as $day) {
+            foreach (($day['items'] ?? array()) as $item) {
+                $subjectId = (int)($item['id'] ?? 0);
+                $cover = self::normalizeCoverSource((string)($item['img'] ?? ''));
+                if ($subjectId > 0 && $cover !== null) {
+                    $name = basename(self::getCoverCachePath($subjectId, $cover));
+                    $referenced[$name] = true;
+                    $referenced[$name . '.lock'] = true;
+                }
+            }
+        }
+
+        $cutoff = time() - self::COVER_CACHE_RETENTION;
+        $entries = scandir($directory);
+        if ($entries === false) {
+            return;
+        }
+
+        foreach ($entries as $entry) {
+            if ($entry === '.' || $entry === '..' || isset($referenced[$entry])) {
+                continue;
+            }
+
+            $path = $directory . '/' . $entry;
+            $modified = is_file($path) ? filemtime($path) : false;
+            if ($modified !== false && $modified < $cutoff) {
+                @unlink($path);
+            }
+        }
+    }
+
+    /**
+     * 读取并更新番剧卡片数据缓存
+     */
+    public static function updateSubjectCacheAndReturn(int $subjectId, int $ValidTimeSpan): string
+    {
+        if ($subjectId <= 0) {
+            return self::encodeJson(array());
+        }
+
+        $directory = self::getSubjectCacheDirectory();
+        if (!is_writable($directory)) {
+            return self::encodeJson(array());
+        }
+
+        $filePath = $directory . '/' . $subjectId . '.json';
+        $cache = self::__isCacheExpired($filePath, $ValidTimeSpan);
+        if ($cache == -1 || $cache == 1) {
+            $json = self::curlFileGetContents(self::buildApiUrl('/v0/subjects/' . $subjectId));
+            $data = $json !== false ? json_decode($json, true) : null;
+            if (!is_array($data) || (int)($data['id'] ?? 0) !== $subjectId) {
+                return self::encodeJson(array());
+            }
+
+            $cache = array('time' => time(), 'data' => $data);
+            self::__writeCache($filePath, $cache);
+        }
+
+        $cache = self::__normalizeCollectionCache($cache);
+        return self::encodeJson($cache['data']);
+    }
+
 
     /**
      * 读取与更新本地已看缓存，格式化返回已看数据
@@ -408,7 +890,8 @@ class BangumiAPI
      */
     public static function updateWatchedCacheAndReturn(string $ID, int $PageSize, int $From, int $ValidTimeSpan): string
     {
-        $cache = self::__isCacheExpired(__DIR__ . '/json/watched.json', $ValidTimeSpan);
+        $filePath = self::getDataCachePath('watched.json');
+        $cache = self::__isCacheExpired($filePath, $ValidTimeSpan);
 
         // 缓存过期或缓存无效
         if ($cache == -1 || $cache == 1) {
@@ -424,7 +907,7 @@ class BangumiAPI
             if (!count($watchedAnime) && !count($watchedReal)) {
                 $cache['time'] = 1;
             }
-            self::__writeCache(__DIR__ . '/json/watched.json', $cache);
+            self::__writeCache($filePath, $cache);
         }
 
         $cache = self::__normalizeTypedCache($cache);
@@ -448,7 +931,8 @@ class BangumiAPI
      */
     public static function updateWatchingCacheAndReturn(string $ID, int $PageSize, int $From, int $ValidTimeSpan): string
     {
-        $cache = self::__isCacheExpired(__DIR__ . '/json/watching.json', $ValidTimeSpan);
+        $filePath = self::getDataCachePath('watching.json');
+        $cache = self::__isCacheExpired($filePath, $ValidTimeSpan);
 
         if ($cache == -1 || $cache == 1) {
             // 缓存无效，重新请求，数据写入
@@ -461,7 +945,7 @@ class BangumiAPI
             if (!count($watchingAnime) && !count($watchingReal)) {
                 $cache['time'] = 1;
             }
-            self::__writeCache(__DIR__ . '/json/watching.json', $cache);
+            self::__writeCache($filePath, $cache);
         }
 
         $cache = self::__normalizeTypedCache($cache);
@@ -483,7 +967,12 @@ class BangumiAPI
      */
     public static function updateCalendarCacheAndReturn(string $ID, int $ValidTimeSpan): string
     {
-        $cache = self::__isCacheExpired(__DIR__ . '/json/calendar.json', $ValidTimeSpan);
+        $filePath = self::getDataCachePath('calendar.json');
+        $cache = self::__isCacheExpired($filePath, $ValidTimeSpan);
+
+        if (is_array($cache) && ($cache['image_variant'] ?? '') !== self::CALENDAR_IMAGE_VARIANT) {
+            $cache = 1;
+        }
 
         if ($cache == -1 || $cache == 1) {
             // 缓存无效，重新请求，数据写入
@@ -492,15 +981,20 @@ class BangumiAPI
                 // 请求数据为空
                 $cache = array('time' => 1, 'data' => array());
             } else {
-                $cache = array('time' => time(), 'data' => $raw);
+                $cache = array(
+                    'time' => time(),
+                    'image_variant' => self::CALENDAR_IMAGE_VARIANT,
+                    'data' => $raw
+                );
+                self::cleanupCoverCache($raw);
             }
-            self::__writeCache(__DIR__ . '/json/calendar.json', $cache);
+            self::__writeCache($filePath, $cache);
         }
 
         $cache = self::__normalizeCollectionCache($cache);
         $filter = self::getCalendarFilter();
         if ($filter !== 'watching') {
-            return self::encodeJson($cache['data']);
+            return self::encodeJson(self::prepareCalendarForOutput($cache['data']));
         }
 
         $watchingAnimes = json_decode(self::updateWatchingCacheAndReturn($ID, 1000, 0, $ValidTimeSpan), true);
@@ -521,6 +1015,6 @@ class BangumiAPI
                 'items' => $items
             );
         }
-        return self::encodeJson($cal);
+        return self::encodeJson(self::prepareCalendarForOutput($cal));
     }
 }

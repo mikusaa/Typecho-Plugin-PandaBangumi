@@ -26,10 +26,9 @@ class Action extends Contents implements ActionInterface
      */
     public function action(): void
     {
-        header("Content-Type: application/json; charset=UTF-8");
-
         $type = strtolower((string)($_GET['type'] ?? ''));
-        if (!in_array($type, ['watching', 'watched', 'calendar'], true)) {
+        if (!in_array($type, ['watching', 'watched', 'calendar', 'subject', 'cover'], true)) {
+            header("Content-Type: application/json; charset=UTF-8");
             echo BangumiAPI::encodeJson(array());
             exit;
         }
@@ -40,6 +39,36 @@ class Action extends Contents implements ActionInterface
         $PageSize = (int)($pluginOptions->PageSize ?? 6);
         $ValidTimeSpan = max(0, (int)($pluginOptions->ValidTimeSpan ?? 86400));
         $From = (int)($_GET['from'] ?? 0);
+
+        if ($type === 'cover') {
+            $cover = BangumiAPI::getCalendarCover(
+                (int)($_GET['id'] ?? 0),
+                strtolower((string)($_GET['v'] ?? ''))
+            );
+
+            if (($cover['status'] ?? 404) === 404) {
+                $this->response->setStatus(404);
+                return;
+            }
+            if (isset($cover['redirect'])) {
+                $this->response->setHeader('Cache-Control', 'no-store');
+                $this->response->redirect($cover['redirect']);
+                return;
+            }
+
+            $this->response->setHeader('Content-Type', $cover['mime']);
+            $this->response->setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+            $this->response->setHeader('X-Content-Type-Options', 'nosniff');
+            $this->response->throwFile($cover['file']);
+            return;
+        }
+
+        header("Content-Type: application/json; charset=UTF-8");
+
+        if ($type === 'subject') {
+            echo BangumiAPI::updateSubjectCacheAndReturn((int)($_GET['id'] ?? 0), $ValidTimeSpan);
+            return;
+        }
 
         if ($PageSize == -1) {
             $PageSize = 1000000;
