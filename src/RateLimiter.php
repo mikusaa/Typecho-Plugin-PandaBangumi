@@ -12,7 +12,7 @@ final class RateLimiter
 
     public function consumeApi(): void
     {
-        $this->consume('api', 20, 1.0);
+        $this->consume('api', 40, 1.0);
     }
 
     public function consumeCover(): void

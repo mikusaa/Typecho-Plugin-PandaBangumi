@@ -136,19 +136,18 @@ final class CalendarService
             return $this->encode($this->coverService->prepareCalendar($cache['data']));
         }
 
-        $watchingPage = json_decode(
-            $this->collectionService->update($userId, 'watching', 'anime', 1000, 0, $validTimeSpan),
-            true
+        $watchingIds = $this->collectionService->subjectIds(
+            $userId,
+            'watching',
+            'anime',
+            CollectionService::MAX_FETCH_LIMIT,
+            $validTimeSpan
         );
-        if (!is_array($watchingPage) || !isset($watchingPage['items']) || !is_array($watchingPage['items'])) {
-            return $this->encode(array());
-        }
-        $watchingIds = array_column($watchingPage['items'], 'id');
 
         $calendar = array();
         foreach ($cache['data'] as $day) {
             $items = array_filter($day['items'], static function ($item) use ($watchingIds): bool {
-                return in_array($item['id'], $watchingIds);
+                return in_array($item['id'], $watchingIds, true);
             });
             $calendar[] = array(
                 'id' => $day['id'],

@@ -78,7 +78,7 @@ namespace {
         'game' => array('playing', 'played'),
         'music' => array('listening', 'listened')
     );
-    const COLLECTION_VARIANT = 'category-v3';
+    const COLLECTION_VARIANT = 'category-v4';
     const CALENDAR_VARIANT = 'images-v2';
 
     final class TestFailure extends RuntimeException
@@ -189,6 +189,29 @@ namespace {
     function fixture(string $name): string
     {
         return (string)file_get_contents(__DIR__ . '/fixtures/' . $name);
+    }
+
+    function collectionResponse(array $subjectIds, ?int $total = null, int $offset = 0): string
+    {
+        return (string)json_encode(array(
+            'total' => $total ?? count($subjectIds),
+            'limit' => 30,
+            'offset' => $offset,
+            'data' => array_map(static fn(int $subjectId): array => array(
+                'ep_status' => 0,
+                'vol_status' => 0,
+                'subject' => array(
+                    'id' => $subjectId,
+                    'name' => 'Subject ' . $subjectId,
+                    'name_cn' => '',
+                    'eps' => 12,
+                    'volumes' => 0,
+                    'date' => '2026-01-01',
+                    'score' => 0,
+                    'images' => array('large' => 'https://lain.bgm.tv/pic/cover/l/' . $subjectId . '.jpg')
+                )
+            ), $subjectIds)
+        ), JSON_UNESCAPED_UNICODE);
     }
 
     function testDirectory(): string
@@ -697,7 +720,7 @@ namespace {
             assertSameValue('api', $gate->api(static fn(): string => 'api'));
             assertSameValue('cover', $gate->cover(static fn(): string => 'cover'));
             $state = $cacheStore->read($cacheStore->statePath('rate-limit.php'));
-            assertSameValue(19, $state['buckets']['api']['tokens']);
+            assertSameValue(39, $state['buckets']['api']['tokens']);
             assertSameValue(31, $state['buckets']['cover']['tokens']);
         } finally {
             removeTestDirectory($directory);
@@ -904,7 +927,8 @@ namespace {
             $cacheStore->write($collectionPath, array(
                 'time' => 900,
                 'data_variant' => COLLECTION_VARIANT,
-                'limit' => 2,
+                'requested_limit' => 2,
+                'complete' => false,
                 'user_key' => hash('sha256', 'tester'),
                 'cate' => 'anime',
                 'data' => array_slice(json_decode(fixture('collection-items.json'), true), 0, 2)
@@ -1047,6 +1071,152 @@ namespace {
             $result = json_decode($calendar->update('tester', 'watching', 60), true);
             assertSameValue(array(101), array_column($result[0]['items'], 'id'));
             assertSameValue(2, count($http->urls));
+        } finally {
+            removeTestDirectory($directory);
+        }
+    });
+
+    $test('Calendar expands a limited collection cache without changing display limit', static function (): void {
+        $directory = testDirectory();
+        try {
+            $pluginConfig = config(array('Limit' => 1, 'ImageMode' => 'direct'));
+            $cacheStore = new CacheStore($directory, static fn(): int => 1000);
+            $http = new FakeHttpTransport(array(
+                collectionResponse(array(102, 101)),
+                fixture('calendar-response.json'),
+                collectionResponse(array(102, 101))
+            ));
+            $cover = coverService($pluginConfig, $cacheStore);
+            $collection = collectionService($pluginConfig, $http, $cacheStore, $cover);
+
+            $limited = json_decode($collection->update('tester', 'watching', 'anime', 11, 0, 60), true);
+            assertSameValue(array(102), array_column($limited['items'], 'id'));
+
+            $calendar = new CalendarService(
+                $pluginConfig,
+                $http,
+                $cacheStore,
+                $cover,
+                $collection,
+                CALENDAR_VARIANT
+            );
+            $days = json_decode($calendar->update('tester', 'watching', 60), true);
+            assertSameValue(array(101), array_column($days[0]['items'], 'id'));
+            assertSameValue(3, count($http->urls));
+
+            $cached = $cacheStore->read($cacheStore->dataPath('watching-anime.php'));
+            assertSameValue(true, $cached['complete']);
+            assertSameValue(1000, $cached['requested_limit']);
+            assertSameValue(array(102, 101), array_column($cached['data'], 'id'));
+
+            $limitedAgain = json_decode($collection->update('tester', 'watching', 'anime', 11, 0, 60), true);
+            assertSameValue(array(102), array_column($limitedAgain['items'], 'id'));
+            assertSameValue(3, count($http->urls));
+        } finally {
+            removeTestDirectory($directory);
+        }
+    });
+
+    $test('Zero collection display limit does not empty the watching calendar', static function (): void {
+        $directory = testDirectory();
+        try {
+            $pluginConfig = config(array('Limit' => 0, 'ImageMode' => 'direct'));
+            $cacheStore = new CacheStore($directory, static fn(): int => 1000);
+            $http = new FakeHttpTransport(array(
+                fixture('calendar-response.json'),
+                collectionResponse(array(101))
+            ));
+            $cover = coverService($pluginConfig, $cacheStore);
+            $collection = collectionService($pluginConfig, $http, $cacheStore, $cover);
+
+            $emptyList = json_decode($collection->update('tester', 'watching', 'anime', 11, 0, 60), true);
+            assertSameValue(array(), $emptyList['items']);
+            assertSameValue(0, count($http->urls));
+
+            $calendar = new CalendarService(
+                $pluginConfig,
+                $http,
+                $cacheStore,
+                $cover,
+                $collection,
+                CALENDAR_VARIANT
+            );
+            $days = json_decode($calendar->update('tester', 'watching', 60), true);
+            assertSameValue(array(101), array_column($days[0]['items'], 'id'));
+            assertSameValue(2, count($http->urls));
+
+            $emptyListAgain = json_decode($collection->update('tester', 'watching', 'anime', 11, 0, 60), true);
+            assertSameValue(array(), $emptyListAgain['items']);
+            assertSameValue(2, count($http->urls));
+        } finally {
+            removeTestDirectory($directory);
+        }
+    });
+
+    $test('Calendar includes a watching item beyond the first 30 collections', static function (): void {
+        $directory = testDirectory();
+        try {
+            $firstPageIds = range(200, 229);
+            $pluginConfig = config(array('Limit' => 30, 'ImageMode' => 'direct'));
+            $cacheStore = new CacheStore($directory, static fn(): int => 1000);
+            $http = new FakeHttpTransport(array(
+                collectionResponse($firstPageIds, 31),
+                fixture('calendar-response.json'),
+                collectionResponse($firstPageIds, 31),
+                collectionResponse(array(999), 31, 30)
+            ));
+            $cover = coverService($pluginConfig, $cacheStore);
+            $collection = collectionService($pluginConfig, $http, $cacheStore, $cover);
+
+            $limited = json_decode($collection->update('tester', 'watching', 'anime', 30, 0, 60), true);
+            assertSameValue($firstPageIds, array_column($limited['items'], 'id'));
+
+            $calendar = new CalendarService(
+                $pluginConfig,
+                $http,
+                $cacheStore,
+                $cover,
+                $collection,
+                CALENDAR_VARIANT
+            );
+            $days = json_decode($calendar->update('tester', 'watching', 60), true);
+            assertSameValue(array(999), array_column($days[0]['items'], 'id'));
+            assertSameValue(4, count($http->urls));
+
+            $cached = $cacheStore->read($cacheStore->dataPath('watching-anime.php'));
+            assertSameValue(true, $cached['complete']);
+            assertSameValue(31, count($cached['data']));
+        } finally {
+            removeTestDirectory($directory);
+        }
+    });
+
+    $test('Calendar ID refresh can fetch 1000 collections within one API bucket', static function (): void {
+        $directory = testDirectory();
+        try {
+            $responses = array();
+            for ($offset = 0; $offset < 1000; $offset += 30) {
+                $count = min(30, 1000 - $offset);
+                $responses[] = collectionResponse(range($offset + 1, $offset + $count), 1000, $offset);
+            }
+
+            $pluginConfig = config(array('Limit' => 30, 'ImageMode' => 'direct'));
+            $cacheStore = new CacheStore($directory, static fn(): int => 1000);
+            $limiter = new RateLimiter($cacheStore);
+            $gate = new UpstreamGate($cacheStore, $limiter);
+            $transport = new FakeHttpTransport($responses);
+            $collection = collectionService(
+                $pluginConfig,
+                new GatedHttpTransport($gate, $transport),
+                $cacheStore,
+                coverService($pluginConfig, $cacheStore, $gate)
+            );
+
+            $ids = $collection->subjectIds('tester', 'watching', 'anime', 1000, 60);
+            assertSameValue(1000, count($ids));
+            assertSameValue(34, count($transport->urls));
+            $state = $cacheStore->read($cacheStore->statePath('rate-limit.php'));
+            assertSameValue(6, $state['buckets']['api']['tokens']);
         } finally {
             removeTestDirectory($directory);
         }

@@ -18,7 +18,7 @@ require_once __DIR__ . '/src/CalendarService.php';
 class BangumiAPI
 {
     private const CALENDAR_IMAGE_VARIANT = 'images-v2';
-    private const COLLECTION_CACHE_VARIANT = 'category-v3';
+    private const COLLECTION_CACHE_VARIANT = 'category-v4';
     private const COLLECTION_SUBJECT_TYPES = array(
         'book' => 1,
         'anime' => 2,

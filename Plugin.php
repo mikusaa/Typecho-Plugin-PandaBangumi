@@ -20,11 +20,11 @@ if (!defined('__TYPECHO_ROOT_DIR__')) {
  *
  * @package PandaBangumi
  * @author 熊猫小A
- * @version 3.0.7
+ * @version 3.0.8
  * @link https://www.himiku.com/archives/pandabangumi.html
  */
 
-define('PandaBangumi_Plugin_VERSION', '3.0.7');
+define('PandaBangumi_Plugin_VERSION', '3.0.8');
 
 class Plugin implements PluginInterface
 {
@@ -136,7 +136,7 @@ class Plugin implements PluginInterface
         $ValidTimeSpan = new Text('ValidTimeSpan', NULL, '86400', _t('数据刷新间隔'), _t('设置 JSON 数据重新请求 Bangumi API 的间隔，单位为秒，默认 24 小时，最低 300 秒。'));
         $form->addInput($ValidTimeSpan);
 
-        $Limit = new Text('Limit', NULL, '30', _t('收藏列表数量上限'), _t('同时限制各分类的在看和已看列表，每类严格获取 0–300 条；设置过大可能增加 Bangumi API 请求频率。'));
+        $Limit = new Text('Limit', NULL, '30', _t('收藏列表数量上限'), _t('限制本站各分类的在看和已看列表，每类严格展示 0–300 条；追番日历使用独立的在看集合，不受此项限制。'));
         $form->addInput($Limit);
     }
 

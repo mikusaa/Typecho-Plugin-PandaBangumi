@@ -4,6 +4,8 @@ namespace TypechoPlugin\PandaBangumi;
 
 final class CollectionService
 {
+    public const MAX_FETCH_LIMIT = 1000;
+
     private const FETCH_PAGE_SIZE = 30;
     private const EMPTY_CACHE = array('time' => 1, 'data' => array());
 
@@ -24,15 +26,19 @@ final class CollectionService
         return $json === false ? '[]' : $json;
     }
 
-    private function fetchRaw(string $userId, int $status, int $subjectType, int $userLimit): array
+    private function fetchRaw(string $userId, int $status, int $subjectType, int $fetchLimit): array
     {
-        if ($userId === '' || $userLimit <= 0) {
-            return array('data' => array(), 'complete' => true);
+        if ($userId === '') {
+            return array('data' => array(), 'complete' => true, 'successful' => true);
+        }
+        if ($fetchLimit <= 0) {
+            return array('data' => array(), 'complete' => false, 'successful' => true);
         }
 
         $offset = 0;
         $collections = array();
-        $complete = true;
+        $complete = false;
+        $successful = true;
         do {
             $url = $this->config->buildApiUrl('/v0/users/' . rawurlencode($userId) . '/collections')
                 . '?subject_type=' . $subjectType
@@ -41,17 +47,21 @@ final class CollectionService
                 . '&offset=' . $offset;
             $json = $this->http->get($url);
             if ($json === false || $json === 'null') {
-                $complete = false;
+                $successful = false;
                 break;
             }
 
             $data = json_decode($json, true);
             if (!is_array($data) || !isset($data['total'], $data['data']) || !is_array($data['data'])) {
-                $complete = false;
+                $successful = false;
                 break;
             }
 
+            $total = max(0, (int)$data['total']);
+            $pageOffset = max(0, (int)($data['offset'] ?? $offset));
+            $processed = 0;
             foreach ($data['data'] as $item) {
+                $processed++;
                 $subject = $item['subject'] ?? array();
                 $subjectId = (int)($subject['id'] ?? 0);
                 if ($subjectId <= 0) {
@@ -71,17 +81,29 @@ final class CollectionService
                     'score' => (float)($subject['score'] ?? 0),
                     'id' => $subjectId,
                 );
-                if (count($collections) >= $userLimit) {
+                if (count($collections) >= $fetchLimit) {
+                    $complete = $pageOffset + $processed >= $total;
                     break 2;
                 }
             }
 
             $responseLimit = max(1, (int)($data['limit'] ?? self::FETCH_PAGE_SIZE));
             $offset = max($offset + $responseLimit, (int)($data['offset'] ?? $offset) + $responseLimit);
-            $hasMore = $offset < (int)$data['total'] && count($data['data']) > 0;
-        } while ($hasMore);
+            if ($offset >= $total) {
+                $complete = true;
+                break;
+            }
+            if (count($data['data']) === 0) {
+                $successful = false;
+                break;
+            }
+        } while (true);
 
-        return array('data' => array_slice($collections, 0, $userLimit), 'complete' => $complete);
+        return array(
+            'data' => array_slice($collections, 0, $fetchLimit),
+            'complete' => $complete,
+            'successful' => $successful
+        );
     }
 
     private function normalize(mixed $cache): array
@@ -102,6 +124,7 @@ final class CollectionService
         int $status,
         string $list,
         string $category,
+        int $requiredLimit,
         int $validTimeSpan
     ): array {
         if (!array_key_exists($category, $this->subjectTypes)) {
@@ -109,26 +132,34 @@ final class CollectionService
         }
 
         $filePath = $this->cacheStore->dataPath($this->cacheFileName($list, $category));
-        $userLimit = $this->config->int('Limit', 30, 0, 300);
+        $requiredLimit = max(0, min(self::MAX_FETCH_LIMIT, $requiredLimit));
         $userKey = hash('sha256', $userId);
-        $isCompatible = function (array $cache) use ($userLimit, $userKey, $category): bool {
+        $isCompatible = function (array $cache) use ($userKey, $category): bool {
             return isset($cache['data'])
                 && is_array($cache['data'])
                 && ($cache['data_variant'] ?? '') === $this->cacheVariant
-                && (int)($cache['limit'] ?? -1) === $userLimit
                 && (string)($cache['user_key'] ?? '') === $userKey
-                && (string)($cache['cate'] ?? '') === $category;
+                && (string)($cache['cate'] ?? '') === $category
+                && array_key_exists('complete', $cache)
+                && is_bool($cache['complete']);
+        };
+        $hasCoverage = static function (array $cache) use ($isCompatible, $requiredLimit): bool {
+            return $isCompatible($cache)
+                && ((bool)$cache['complete'] || count($cache['data']) >= $requiredLimit);
         };
 
         $stored = $this->cacheStore->read($filePath);
-        $cache = $this->cacheStore->usable($filePath, $validTimeSpan, $stored, $isCompatible);
+        if ($requiredLimit === 0) {
+            return $isCompatible($stored) ? $stored : self::EMPTY_CACHE;
+        }
+        $cache = $this->cacheStore->usable($filePath, $validTimeSpan, $stored, $hasCoverage);
         if ($cache !== null) {
             return $this->normalize($cache);
         }
 
         $lockHandle = $this->cacheStore->acquireRefreshLock($filePath);
         if ($lockHandle === false) {
-            if ($isCompatible($stored)) {
+            if ($hasCoverage($stored)) {
                 return $stored;
             }
             throw new RateLimitExceeded(1);
@@ -136,15 +167,15 @@ final class CollectionService
 
         try {
             $stored = $this->cacheStore->read($filePath);
-            $cache = $this->cacheStore->usable($filePath, $validTimeSpan, $stored, $isCompatible);
+            $cache = $this->cacheStore->usable($filePath, $validTimeSpan, $stored, $hasCoverage);
             if ($cache !== null) {
                 return $this->normalize($cache);
             }
 
             try {
-                $result = $this->fetchRaw($userId, $status, $this->subjectTypes[$category], $userLimit);
+                $result = $this->fetchRaw($userId, $status, $this->subjectTypes[$category], $requiredLimit);
             } catch (RateLimitExceeded $error) {
-                if ($isCompatible($stored)) {
+                if ($hasCoverage($stored)) {
                     return $this->normalize($this->cacheStore->deferRefresh(
                         $filePath,
                         $stored,
@@ -156,13 +187,14 @@ final class CollectionService
             $newCache = array(
                 'time' => $this->cacheStore->now(),
                 'data_variant' => $this->cacheVariant,
-                'limit' => $userLimit,
+                'requested_limit' => $requiredLimit,
+                'complete' => $result['complete'],
                 'user_key' => $userKey,
                 'cate' => $category,
                 'data' => $result['data']
             );
 
-            if (!$result['complete']) {
+            if (!$result['successful']) {
                 $fallback = $isCompatible($stored) ? $stored : array_merge($newCache, array('time' => 1));
                 return $this->normalize($this->cacheStore->deferRefresh($filePath, $fallback));
             }
@@ -207,14 +239,46 @@ final class CollectionService
         int $validTimeSpan
     ): string {
         $status = ($this->listTypes[$category][1] ?? '') === $type ? 2 : 3;
-        $cache = $this->categoryCache($userId, $status, $type, $category, $validTimeSpan);
+        $displayLimit = $this->config->int('Limit', 30, 0, 300);
+        $cache = $this->categoryCache(
+            $userId,
+            $status,
+            $type,
+            $category,
+            $displayLimit,
+            $validTimeSpan
+        );
         $this->coverService->maybeRunMaintenance();
         $page = $this->page(
-            $cache['data'],
+            array_slice($cache['data'], 0, $displayLimit),
             $pageSize,
             $from,
             $this->moreUrl($userId, $type, $category)
         );
         return $this->encode($this->coverService->prepareCollectionPage($page));
+    }
+
+    public function subjectIds(
+        string $userId,
+        string $type,
+        string $category,
+        int $requiredLimit,
+        int $validTimeSpan
+    ): array {
+        if (!array_key_exists($category, $this->subjectTypes)) {
+            return array();
+        }
+
+        $status = ($this->listTypes[$category][1] ?? '') === $type ? 2 : 3;
+        $cache = $this->categoryCache(
+            $userId,
+            $status,
+            $type,
+            $category,
+            $requiredLimit,
+            $validTimeSpan
+        );
+        $ids = array_map('intval', array_column($cache['data'], 'id'));
+        return array_values(array_unique(array_filter($ids, static fn(int $id): bool => $id > 0)));
     }
 }
