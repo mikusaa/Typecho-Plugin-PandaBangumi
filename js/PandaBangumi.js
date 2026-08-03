@@ -765,10 +765,30 @@ async function renderCard(subjectId, cardElement) {
     if (!cardElement || cardElement.dataset.bgmLoaded === '1' || cardElement.dataset.bgmLoading === '1') return;
 
     cardElement.dataset.bgmLoading = '1';
+    cardElement.setAttribute('aria-busy', 'true');
     cardElement.textContent = '';
     const loading = document.createElement('div');
-    loading.className = 'loading-state';
-    loading.textContent = '正在从 Bangumi 加载数据...';
+    loading.className = 'bgm-subject-card-state bgm-subject-card-state--loading';
+    loading.setAttribute('role', 'status');
+
+    const loadingText = document.createElement('span');
+    loadingText.className = 'bgm-subject-card__sr-only';
+    loadingText.textContent = '正在从 Bangumi 加载条目信息...';
+    loading.appendChild(loadingText);
+
+    const loadingPoster = document.createElement('span');
+    loadingPoster.className = 'bgm-subject-card-state__poster';
+    loading.setAttribute('aria-label', loadingText.textContent);
+    loading.appendChild(loadingPoster);
+
+    const loadingContent = document.createElement('span');
+    loadingContent.className = 'bgm-subject-card-state__content';
+    ['short', 'title', 'subtitle', 'summary', 'meta'].forEach(size => {
+        const line = document.createElement('span');
+        line.className = `bgm-subject-card-state__line bgm-subject-card-state__line--${size}`;
+        loadingContent.appendChild(line);
+    });
+    loading.appendChild(loadingContent);
     cardElement.appendChild(loading);
 
     const safeSubjectId = parseInt(subjectId, 10);
@@ -785,8 +805,11 @@ async function renderCard(subjectId, cardElement) {
 
         if (data.id === safeSubjectId) {
             cardElement.textContent = '';
-            cardElement.appendChild(buildCardElement(data, safeSubjectId));
+            const subjectCard = buildCardElement(data, safeSubjectId);
+            cardElement.dataset.subjectType = subjectCard.dataset.subjectType;
+            cardElement.appendChild(subjectCard);
             cardElement.dataset.bgmLoaded = '1';
+            cardElement.setAttribute('aria-busy', 'false');
         } else {
             throw new Error('返回的 Bangumi 条目数据无效');
         }
@@ -810,9 +833,12 @@ async function renderCard(subjectId, cardElement) {
 function renderCardError(cardElement, subjectId) {
     delete cardElement.dataset.bgmLoaded;
     delete cardElement.dataset.bgmLoading;
+    delete cardElement.dataset.subjectType;
+    cardElement.setAttribute('aria-busy', 'false');
     cardElement.textContent = '';
     const errorEl = document.createElement('div');
-    errorEl.className = 'error-state';
+    errorEl.className = 'bgm-subject-card-state bgm-subject-card-state--error';
+    errorEl.setAttribute('role', 'status');
     errorEl.textContent = `无法加载条目信息。请检查 Subject ID (${String(subjectId)}) 或网络连接。`;
     cardElement.appendChild(errorEl);
 }
@@ -839,28 +865,96 @@ function findInfo(infobox, key) {
 }
 
 /**
- * 根据分数返回描述性文字
- * @param {number|null} score
+ * 压缩 Subject 文本中的连续空白
+ * @param {unknown} value
  * @returns {string}
  */
-function getScoreDescriptionJs(score) {
-    if (isNaN(score) || score <= 0) {
-        return '暂无评分';
+function normalizeSubjectText(value) {
+    return String(value || '').replace(/\s+/g, ' ').trim();
+}
+
+/**
+ * 为计数值补充单位
+ * @param {unknown} value
+ * @param {string} unit
+ * @returns {string}
+ */
+function formatSubjectCount(value, unit) {
+    const text = normalizeSubjectText(value);
+    if (!text) return '';
+    return text.endsWith(unit) ? text : `${text} ${unit}`;
+}
+
+/**
+ * 将 Bangumi Subject 数据标准化为卡片展示模型
+ * @param {object} data
+ * @param {number} subjectId
+ * @returns {object}
+ */
+function normalizeSubjectCardData(data, subjectId) {
+    const source = data && typeof data === 'object' ? data : {};
+    const typeNumber = Number(source.type || 0);
+    const typeConfig = {
+        1: { key: 'book', label: '书籍' },
+        2: { key: 'anime', label: '动画' },
+        3: { key: 'music', label: '音乐' },
+        4: { key: 'game', label: '游戏' },
+        6: { key: 'real', label: '三次元' }
+    }[typeNumber] || { key: 'unknown', label: '条目' };
+
+    const title = normalizeSubjectText(source.name_cn || source.name) || '未命名条目';
+    const originalTitle = source.name_cn ? normalizeSubjectText(source.name) : '';
+    const rating = source.rating && typeof source.rating === 'object' ? source.rating : {};
+    const scoreValue = Number(rating.score || 0);
+    const ratingCountValue = Number(rating.total);
+    const collectionCountValue = Number(source.collection && source.collection.collect);
+    let primaryMeta = '';
+
+    if (typeNumber === 1) {
+        const volumeCount = Number(source.volumes || 0);
+        const volumes = volumeCount > 0 ? String(volumeCount) : findInfo(source.infobox, '册数');
+        primaryMeta = formatSubjectCount(volumes, '册');
+    } else if (typeNumber === 2) {
+        primaryMeta = formatSubjectCount(
+            findInfo(source.infobox, '话数') || (Number(source.total_episodes || 0) > 0 ? source.total_episodes : ''),
+            '话'
+        );
+    } else if (typeNumber === 4) {
+        primaryMeta = normalizeSubjectText(findInfo(source.infobox, '平台') || source.platform);
+    } else if (typeNumber === 6) {
+        primaryMeta = formatSubjectCount(
+            findInfo(source.infobox, '集数') || (Number(source.total_episodes || 0) > 0 ? source.total_episodes : ''),
+            '集'
+        );
     }
 
-    switch (Math.floor(score)) {
-        case 1: return '不忍直视';
-        case 2: return '很差';
-        case 3: return '差';
-        case 4: return '较差';
-        case 5: return '不过不失';
-        case 6: return '还行';
-        case 7: return '推荐';
-        case 8: return '力荐';
-        case 9: return '神作';
-        case 10: return '神作';
-        default: return '暂无评分';
-    }
+    const tags = [];
+    (Array.isArray(source.tags) ? source.tags : []).forEach(tag => {
+        const name = normalizeSubjectText(tag && tag.name);
+        if (name && !tags.includes(name) && tags.length < 3) tags.push(name);
+    });
+
+    return {
+        id: subjectId,
+        typeKey: typeConfig.key,
+        typeLabel: typeConfig.label,
+        title,
+        originalTitle: originalTitle !== title ? originalTitle : '',
+        summary: normalizeSubjectText(source.summary),
+        posterUrl: buildSubjectCoverUrl(source, subjectId)
+            || safeImageUrl(source.images && source.images.large),
+        date: normalizeSubjectText(source.date),
+        score: Number.isFinite(scoreValue) && scoreValue > 0 ? scoreValue.toFixed(1) : '暂无评分',
+        hasScore: Number.isFinite(scoreValue) && scoreValue > 0,
+        ratingCount: Number.isFinite(ratingCountValue) && ratingCountValue >= 0
+            ? Math.floor(ratingCountValue)
+            : null,
+        collectionCount: Number.isFinite(collectionCountValue) && collectionCountValue >= 0
+            ? Math.floor(collectionCountValue)
+            : null,
+        primaryMeta,
+        tags
+    };
 }
 
 /**
@@ -870,32 +964,25 @@ function getScoreDescriptionJs(score) {
  * @returns {HTMLElement}
  */
 function buildCardElement(data, subjectId) {
-    const nameCN = String(data.name_cn || data.name || '');
-    const nameOriginal = data.name_cn ? String(data.name || '') : '';
-    const posterUrl = buildSubjectCoverUrl(data, subjectId)
-        || safeImageUrl(data.images && data.images.large);
+    const cardData = normalizeSubjectCardData(data, subjectId);
     const bangumiUrl = `https://bgm.tv/subject/${subjectId}`;
-    const rating = data.rating || {};
-    const scoreValue = Number(rating.score || 0);
-    const score = scoreValue > 0 ? scoreValue.toFixed(1) : 'N/A';
-    const ratingCount = Number(rating.total || 0);
-    const airDate = String(data.date || '未知');
-    const subjectType = Number(data.type || 0);
-    const collectionCount = Number(data.collection && data.collection.collect || 0);
 
     const wrapper = document.createElement('a');
     wrapper.href = bangumiUrl;
     wrapper.target = '_blank';
     wrapper.rel = 'noopener noreferrer';
-    wrapper.className = 'bgm-card-link-wrapper';
+    wrapper.className = 'bgm-subject-card';
+    wrapper.dataset.subjectType = cardData.typeKey;
+    wrapper.setAttribute('aria-label', `${cardData.typeLabel}《${cardData.title}》，在 Bangumi 查看`);
 
     const poster = document.createElement('div');
-    poster.className = 'bgm-card-poster';
+    poster.className = 'bgm-subject-card__poster';
     const img = document.createElement('img');
-    img.alt = `${nameCN} 封面`;
+    img.className = 'bgm-subject-card__image';
+    img.alt = `${cardData.title} 封面`;
     img.loading = 'lazy';
     img.decoding = 'async';
-    if (posterUrl) {
+    if (cardData.posterUrl) {
         poster.classList.add('is-cover-loading');
         img.addEventListener('load', () => {
             poster.classList.remove('is-cover-loading', 'is-cover-error');
@@ -905,7 +992,7 @@ function buildCardElement(data, subjectId) {
             poster.classList.remove('is-cover-loading', 'is-cover-loaded');
             poster.classList.add('is-cover-error');
         }, { once: true });
-        img.src = posterUrl;
+        img.src = cardData.posterUrl;
     } else {
         poster.classList.add('is-cover-error');
     }
@@ -913,65 +1000,95 @@ function buildCardElement(data, subjectId) {
     wrapper.appendChild(poster);
 
     const content = document.createElement('div');
-    content.className = 'bgm-card-content';
+    content.className = 'bgm-subject-card__content';
 
-    const title = document.createElement('h3');
-    title.className = 'bgm-card-title';
-    title.textContent = nameCN;
-    content.appendChild(title);
+    const header = document.createElement('div');
+    header.className = 'bgm-subject-card__header';
 
-    const subtitle = document.createElement('p');
-    subtitle.className = 'bgm-card-subtitle';
-    subtitle.textContent = nameOriginal || '\u00a0';
-    content.appendChild(subtitle);
+    const eyebrow = document.createElement('div');
+    eyebrow.className = 'bgm-subject-card__eyebrow';
 
-    const meta = document.createElement('div');
-    meta.className = 'bgm-card-meta';
-    appendMetaItem(meta, 'icon-calendar', airDate);
-    if (subjectType === 1) {
-        const volumeCount = Number(data.volumes || 0);
-        const volumes = volumeCount > 0 ? String(volumeCount) : findInfo(data.infobox, '册数');
-        if (volumes) appendMetaItem(meta, 'icon-book', `${volumes} 册`);
-    } else if (subjectType === 4) {
-        const platform = String(findInfo(data.infobox, '平台') || data.platform || '');
-        if (platform) appendMetaItem(meta, 'icon-game', platform);
-    } else if (subjectType === 2 || subjectType === 6) {
-        const totalEpisodes = findInfo(data.infobox, subjectType === 6 ? '集数' : '话数')
-            || String(data.total_episodes || '未知');
-        appendMetaItem(meta, 'icon-tv', `${totalEpisodes} 集`);
+    const type = document.createElement('span');
+    type.className = 'bgm-subject-card__type';
+    type.textContent = cardData.typeLabel;
+    eyebrow.appendChild(type);
+
+    if (cardData.date) {
+        const date = document.createElement('time');
+        date.className = 'bgm-subject-card__date';
+        date.dateTime = cardData.date;
+        date.textContent = cardData.date;
+        eyebrow.appendChild(date);
     }
-    appendMetaItem(meta, 'icon-collection', `${collectionCount} 人收藏`);
-    content.appendChild(meta);
-
-    const tags = document.createElement('div');
-    tags.className = 'bgm-card-tags';
-    (Array.isArray(data.tags) ? data.tags : []).slice(0, 7).forEach(tag => {
-        const tagEl = document.createElement('span');
-        tagEl.className = 'bgm-card-tag';
-        tagEl.textContent = String(tag.name || '');
-        tags.appendChild(tagEl);
-    });
-    content.appendChild(tags);
+    header.appendChild(eyebrow);
 
     const ratingArea = document.createElement('div');
-    ratingArea.className = 'bgm-card-rating-area';
+    ratingArea.className = 'bgm-subject-card__rating';
 
     const scoreEl = document.createElement('span');
-    scoreEl.className = 'bgm-card-score';
-    scoreEl.textContent = score;
+    scoreEl.className = 'bgm-subject-card__score';
+    if (!cardData.hasScore) scoreEl.classList.add('is-empty');
+    scoreEl.textContent = cardData.score;
     ratingArea.appendChild(scoreEl);
 
-    const scoreText = document.createElement('span');
-    scoreText.className = 'bgm-card-score-text';
-    scoreText.textContent = getScoreDescriptionJs(scoreValue);
-    ratingArea.appendChild(scoreText);
+    if (cardData.ratingCount !== null && cardData.hasScore) {
+        const ratingCountEl = document.createElement('span');
+        ratingCountEl.className = 'bgm-subject-card__rating-count';
+        ratingCountEl.textContent = `${cardData.ratingCount} 人评分`;
+        ratingArea.appendChild(ratingCountEl);
+    }
 
-    const ratingCountEl = document.createElement('span');
-    ratingCountEl.className = 'bgm-card-rating-count';
-    ratingCountEl.textContent = `(${ratingCount}人评分)`;
-    ratingArea.appendChild(ratingCountEl);
+    const external = document.createElement('span');
+    external.className = 'bgm-subject-card__external';
+    external.setAttribute('aria-hidden', 'true');
+    external.textContent = '↗';
+    ratingArea.appendChild(external);
+    header.appendChild(ratingArea);
+    content.appendChild(header);
 
-    content.appendChild(ratingArea);
+    const title = document.createElement('h3');
+    title.className = 'bgm-subject-card__title';
+    title.textContent = cardData.title;
+    content.appendChild(title);
+
+    if (cardData.originalTitle) {
+        const subtitle = document.createElement('p');
+        subtitle.className = 'bgm-subject-card__subtitle';
+        subtitle.textContent = cardData.originalTitle;
+        content.appendChild(subtitle);
+    }
+
+    if (cardData.summary) {
+        const summary = document.createElement('p');
+        summary.className = 'bgm-subject-card__summary';
+        summary.textContent = cardData.summary;
+        content.appendChild(summary);
+    }
+
+    const footer = document.createElement('div');
+    footer.className = 'bgm-subject-card__footer';
+
+    const meta = document.createElement('div');
+    meta.className = 'bgm-subject-card__meta';
+    if (cardData.primaryMeta) appendMetaItem(meta, cardData.primaryMeta);
+    if (cardData.collectionCount !== null) {
+        appendMetaItem(meta, `${cardData.collectionCount} 人收藏`);
+    }
+    if (meta.childElementCount > 0) footer.appendChild(meta);
+
+    if (cardData.tags.length > 0) {
+        const tags = document.createElement('div');
+        tags.className = 'bgm-subject-card__tags';
+        cardData.tags.forEach(tag => {
+            const tagEl = document.createElement('span');
+            tagEl.className = 'bgm-subject-card__tag';
+            tagEl.textContent = tag;
+            tags.appendChild(tagEl);
+        });
+        footer.appendChild(tags);
+    }
+
+    content.appendChild(footer);
     wrapper.appendChild(content);
     return wrapper;
 }
@@ -979,17 +1096,12 @@ function buildCardElement(data, subjectId) {
 /**
  * 追加元信息
  * @param {HTMLElement} container
- * @param {string} iconClass
  * @param {string} text
  */
-function appendMetaItem(container, iconClass, text) {
+function appendMetaItem(container, text) {
     const item = document.createElement('span');
-    item.className = 'meta-item';
-
-    const icon = document.createElement('i');
-    icon.className = `meta-icon ${iconClass}`;
-    item.appendChild(icon);
-    item.appendChild(document.createTextNode(String(text)));
+    item.className = 'bgm-subject-card__meta-item';
+    item.textContent = String(text);
     container.appendChild(item);
 }
 

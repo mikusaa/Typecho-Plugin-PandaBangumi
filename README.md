@@ -6,7 +6,7 @@
 
 ## 使用
 
-插件版添加了**分页功能**，这样收藏很多时能节约流量，加快速度。收藏列表、追番日历和单部条目卡片均按需插入对应的 HTML 标记，不需要在插件设置中单独开关。
+插件版添加了**分页功能**，这样收藏很多时能节约流量，加快速度。收藏列表、追番日历和单部 Subject 条目卡片均按需插入对应的 HTML 标记，不需要在插件设置中单独开关。
 
 使用方法：去 GitHub 上下载插件：[mikusaa/Typecho-Plugin-PandaBangumi](https://github.com/mikusaa/Typecho-Plugin-PandaBangumi)
 
@@ -16,7 +16,7 @@
 
 如果服务器无法直接访问 Bangumi API，可以在插件设置的 `Bangumi API 镜像` 中填写等价于 `https://api.bgm.tv` 的 HTTPS 镜像域名，例如 `https://bgm-api.example.com`；留空则使用官方 API，HTTP 地址会被忽略。请只填写域名，不要带 `/v0` 或其他路径；如果误填了路径，插件会自动忽略路径。API 请求均由服务器发起；如果镜像返回的图片地址也使用该镜像域名，选择“直接加载”时访客仍会看到这个图片域名。
 
-插件统一选择 API 响应中的 `images.large` 作为封面，不根据图片 URL 猜测或替换尺寸。日历、收藏列表和单部条目卡片共用 `封面加载方式`：默认的“直接加载”会原样使用 API 返回的图片地址；如果 API 镜像使用自己的图片反代或独立 CDN，应由镜像改写响应 JSON 中的各尺寸图片地址，并保证返回的图片可以被访客浏览器访问。HTTPS 页面直接加载 HTTP 图片时，浏览器可能会按混合内容拦截。
+插件统一选择 API 响应中的 `images.large` 作为封面，不根据图片 URL 猜测或替换尺寸。日历、收藏列表和单部 Subject 条目卡片共用 `封面加载方式`：默认的“直接加载”会原样使用 API 返回的图片地址；如果 API 镜像使用自己的图片反代或独立 CDN，应由镜像改写响应 JSON 中的各尺寸图片地址，并保证返回的图片可以被访客浏览器访问。HTTPS 页面直接加载 HTTP 图片时，浏览器可能会按混合内容拦截。
 
 选择“缓存到本站后加载”时，服务器会下载 API 返回的 `large` 封面并保存到 `插件目录/cache/covers/`，访客只请求本站地址，不会看到图片来源域名。缓存模式保留严格懒加载和长期浏览器缓存；下载失败时显示缺图，不会回退到外部图片。为避免服务端请求被滥用，缓存只接受公网 HTTPS 图片地址；Bangumi 官方日历中的 `http://lain.bgm.tv` 地址会仅在服务器下载时升级为 HTTPS。
 
@@ -75,7 +75,7 @@
 <div data-filter="watching" class="bgm-calendar"></div>
 ```
 
-Bangumi 条目卡片（支持动画、书籍、游戏等 Subject）
+Bangumi 单部 Subject 条目卡片（正式适配动画、书籍、游戏和三次元；音乐及未知类型使用通用降级展示）
 ```html
 <div class="bgm-card" data-id="Subject ID"></div>
 ```
@@ -90,7 +90,7 @@ JSON 缓存过期后会由单个请求负责刷新；如果 Bangumi API 暂时�
 
 服务器需要 PHP 8.0 或更高版本，并启用 PHP curl openssl 扩展。
 
-不一定所有主题都完美。
+单部 Subject 条目卡片不依赖特定主题正文类，并提供 `--pb-subject-bg`、`--pb-subject-border`、`--pb-subject-text`、`--pb-subject-muted`、`--pb-subject-accent` CSS 变量供主题按需覆盖。
 
 插件会把固定 JSON 数据、Bangumi 条目 JSON 和封面图片分别写入 `插件目录/cache/data/`、`cache/subjects/` 和 `cache/covers/`，请保证 `cache/` 及其子目录可写。缓存刷新时会自动删除已不再被日历、收藏列表或近期条目卡片引用且超过 90 天的封面。
 
@@ -104,6 +104,12 @@ PHP 测试不访问真实 Bangumi API，也不写入插件缓存目录：
 
 ```bash
 php tests/run.php
+```
+
+单部 Subject 卡片的数据标准化测试使用 Node.js 内置模块，不需要安装依赖：
+
+```bash
+node tests/subject-card.js
 ```
 
 Typecho 直接加载的入口文件保留在插件根目录；内部 PHP 模块统一放在 `src/`：

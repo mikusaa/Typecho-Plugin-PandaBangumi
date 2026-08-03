@@ -1,0 +1,70 @@
+{
+  "anime": {
+    "id": 101,
+    "name": "Anime Original",
+    "name_cn": "动画标题",
+    "type": 2,
+    "date": "2026-04-08",
+    "summary": "第一行\n  第二行   第三段",
+    "total_episodes": 12,
+    "rating": { "score": 8.24, "total": 3210 },
+    "collection": { "collect": 4567 },
+    "cover_version": "1234567890abcdef",
+    "tags": [
+      { "name": "原创" },
+      { "name": "科幻" },
+      { "name": "原创" },
+      { "name": "群像" },
+      { "name": "不会显示" }
+    ]
+  },
+  "book": {
+    "id": 102,
+    "name": "Book Original",
+    "name_cn": "书籍标题",
+    "type": 1,
+    "volumes": 9,
+    "images": { "large": "https://lain.bgm.tv/pic/cover/l/book.jpg" }
+  },
+  "game": {
+    "id": 103,
+    "name": "Game Title",
+    "type": 4,
+    "platform": "fallback platform",
+    "infobox": [
+      {
+        "key": "平台",
+        "value": [
+          { "v": "Nintendo Switch" },
+          { "v": "PC" }
+        ]
+      }
+    ]
+  },
+  "real": {
+    "id": 104,
+    "name": "Real Title",
+    "type": 6,
+    "infobox": [
+      { "key": "集数", "value": "24" }
+    ]
+  },
+  "music": {
+    "id": 105,
+    "name": "Music Title",
+    "type": 3,
+    "date": "2026-01-01"
+  },
+  "unknown": {
+    "id": 106,
+    "name": "Unknown Type",
+    "type": 99
+  },
+  "missing": {
+    "id": 107,
+    "type": 1,
+    "rating": { "score": 0 },
+    "infobox": [{ "key": "话数", "value": "42" }],
+    "tags": [null, {}, { "name": "   " }]
+  }
+}
