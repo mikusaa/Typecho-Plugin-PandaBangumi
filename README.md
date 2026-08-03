@@ -2,7 +2,7 @@
 
 为你的 Typecho 博客增加追番列表显示功能。
 
-介绍：**[熊猫追番 (PandaBangumi) for Typecho 发布！ - 熊猫小A的博客](https://blog.imalan.cn/archives/128/)**
+介绍：**[PandaBangumi 插件介绍与使用说明](https://www.himiku.com/archives/pandabangumi.html)**
 
 ## 使用
 
@@ -18,7 +18,7 @@
 
 插件统一选择 API 响应中的 `images.large` 作为封面，不根据图片 URL 猜测或替换尺寸。日历、收藏列表和单部 Subject 条目卡片共用 `封面加载方式`：默认的“直接加载”会原样使用 API 返回的图片地址；如果 API 镜像使用自己的图片反代或独立 CDN，应由镜像改写响应 JSON 中的各尺寸图片地址，并保证返回的图片可以被访客浏览器访问。HTTPS 页面直接加载 HTTP 图片时，浏览器可能会按混合内容拦截。
 
-选择“缓存到本站后加载”时，服务器会下载 API 返回的 `large` 封面并保存到 `插件目录/cache/covers/`，访客只请求本站地址，不会看到图片来源域名。缓存模式保留严格懒加载和长期浏览器缓存；下载失败时显示缺图，不会回退到外部图片。为避免服务端请求被滥用，缓存只接受公网 HTTPS 图片地址；Bangumi 官方日历中的 `http://lain.bgm.tv` 地址会仅在服务器下载时升级为 HTTPS。
+选择“缓存到本站后加载”时，服务器会下载 API 返回的 `large` 封面并保存到 `插件目录/cache/covers/`，访客只请求本站地址，不会看到图片来源域名。缓存模式保留严格懒加载和长期浏览器缓存；下载失败时显示缺图，不会回退到外部图片。为避免服务端请求被滥用，缓存只接受公网 HTTPS 图片地址；Bangumi 官方日历中的 `http://lain.bgm.tv` 地址会仅在服务器下载时升级为 HTTPS。冷 Subject 刷新和冷封面下载使用独立的全局限流，超过阈值时接口会返回 `429` 和 `Retry-After`，已有缓存不受影响。
 
 在任何页面，不论是独立页还是一般的文章页面，在文章里插入代码：
 
@@ -96,7 +96,7 @@ Bangumi 单部 Subject 条目卡片（正式适配动画、书籍、游戏、三
 
 插件带了缓存功能，可以极大地提升速度，**但是记得要保证 `插件目录/cache/` 这个目录可写**。
 
-JSON 缓存过期后会由单个请求负责刷新；如果 Bangumi API 暂时不可用，插件会继续使用已有缓存，并在短暂退避后重试，避免页面内容突然清空或并发重复请求上游。
+数据缓存过期后会由单个请求负责刷新；如果 Bangumi API 暂时不可用，插件会继续使用已有缓存，并在短暂退避后重试，避免页面内容突然清空或并发重复请求上游。
 
 ## 注意事项
 
@@ -104,11 +104,11 @@ JSON 缓存过期后会由单个请求负责刷新；如果 Bangumi API 暂时�
 
 单部 Subject 条目卡片不依赖特定主题正文类，并提供 `--pb-subject-bg`、`--pb-subject-border`、`--pb-subject-text`、`--pb-subject-muted`、`--pb-subject-accent` CSS 变量供主题按需覆盖。
 
-插件会把固定 JSON 数据、Bangumi 条目 JSON 和封面图片分别写入 `插件目录/cache/data/`、`cache/subjects/` 和 `cache/covers/`，请保证 `cache/` 及其子目录可写。缓存刷新时会自动删除已不再被日历、收藏列表或近期条目卡片引用且超过 90 天的封面。
+插件会把固定数据、Bangumi 条目数据和封面图片分别写入 `插件目录/cache/data/`、`cache/subjects/` 和 `cache/covers/`，请保证 `cache/` 及其子目录可写。数据缓存使用带直接访问防护的 `.php` 文件，不应通过 Web 读取原始内容；Apache 环境还会在缓存目录入口直接返回 `404`。Subject 缓存最多保留 256 项；封面缓存最多保留 2048 个文件且总计不超过 512 MiB，超限时优先保留当前日历、收藏列表和正在响应的封面。
 
 插件会自动监听常见 PJAX 事件并重新初始化番剧展示。只有主题使用非标准 PJAX 事件、切换后仍未加载时，才需要在主题回调中手动调用 `window.PandaBangumi.init();`。
 
-从仍使用旧版图片配置或 `json/` 缓存目录的版本跨版本升级时，请先卸载旧版插件，再安装新版并重新配置。
+升级到 3.0.3 开发版后，插件会在首次缓存初始化时直接删除 `cache/data/*.json`、`cache/subjects/*.json` 和旧 `json/` 缓存，不迁移旧数据；已有封面会保留并按新配额管理。从仍使用旧版图片配置的版本跨版本升级时，请先卸载旧版插件，再安装新版并重新配置。
 
 ## 开发测试
 
@@ -128,6 +128,7 @@ Typecho 直接加载的入口文件保留在插件根目录；内部 PHP 模块�
 
 - `PluginConfig.php`：插件配置读取与规范化。
 - `HttpClient.php`、`HttpTransport.php`：Bangumi JSON 请求及可替换传输接口。
-- `CacheStore.php`：文件缓存、原子写入、刷新锁和失败退避。
+- `CacheStore.php`：受保护文件缓存、安全初始化、原子写入、固定分片锁、配额和失败退避。
+- `RateLimiter.php`、`RateLimitExceeded.php`：冷 Subject 刷新和封面下载的令牌桶限流。
 - `CoverService.php`：封面校验、下载、缓存响应和清理。
 - `CollectionService.php`、`CalendarService.php`、`SubjectService.php`：各类数据刷新与输出。

@@ -1,2 +1,14 @@
 *
 !.gitignore
+!.htaccess
+!index.php
+!data/
+!data/index.php
+!subjects/
+!subjects/index.php
+!covers/
+!covers/index.php
+!state/
+!state/index.php
+!locks/
+!locks/index.php

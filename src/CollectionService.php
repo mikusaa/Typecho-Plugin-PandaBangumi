@@ -94,7 +94,7 @@ final class CollectionService
 
     private function cacheFileName(string $list, string $category): string
     {
-        return $list . '-' . $category . '.json';
+        return $list . '-' . $category . '.php';
     }
 
     private function categoryCache(
@@ -154,7 +154,7 @@ final class CollectionService
             }
 
             $this->cacheStore->write($filePath, $newCache);
-            $calendar = $this->cacheStore->read($this->cacheStore->dataPath('calendar.json'));
+            $calendar = $this->cacheStore->read($this->cacheStore->dataPath('calendar.php'));
             $this->coverService->cleanup($calendar['data'] ?? array());
             return $newCache;
         } finally {

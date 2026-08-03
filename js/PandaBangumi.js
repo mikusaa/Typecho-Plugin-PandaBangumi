@@ -13,7 +13,7 @@ window.PandaBangumi = PandaBangumiRuntime;
 
 if (!PandaBangumiRuntime.consoleLogged) {
     console.log(
-        ' %c PandaBangumi %c https://blog.imalan.cn/archives/128/ ',
+        ' %c PandaBangumi %c https://www.himiku.com/archives/pandabangumi.html ',
         'color: #fff; background: #DF98A0; padding: 5px;',
         'color: #fff; background: #1c2b36; padding: 5px;'
     );

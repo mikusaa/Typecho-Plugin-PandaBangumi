@@ -6,6 +6,8 @@ require_once __DIR__ . '/src/PluginConfig.php';
 require_once __DIR__ . '/src/HttpTransport.php';
 require_once __DIR__ . '/src/HttpClient.php';
 require_once __DIR__ . '/src/CacheStore.php';
+require_once __DIR__ . '/src/RateLimitExceeded.php';
+require_once __DIR__ . '/src/RateLimiter.php';
 require_once __DIR__ . '/src/CoverService.php';
 require_once __DIR__ . '/src/RequestParameters.php';
 require_once __DIR__ . '/src/CollectionService.php';
@@ -34,6 +36,7 @@ class BangumiAPI
     private static ?PluginConfig $config = null;
     private static ?HttpClient $httpClient = null;
     private static ?CacheStore $cacheStore = null;
+    private static ?RateLimiter $rateLimiter = null;
     private static ?CoverService $coverService = null;
     private static ?RequestParameters $requestParameters = null;
     private static ?CollectionService $collectionService = null;
@@ -55,15 +58,26 @@ class BangumiAPI
         return self::$cacheStore ??= new CacheStore(__DIR__ . '/cache');
     }
 
+    private static function rateLimiter(): RateLimiter
+    {
+        return self::$rateLimiter ??= new RateLimiter(self::cacheStore());
+    }
+
     private static function coverService(): CoverService
     {
-        return self::$coverService ??= new CoverService(
+        if (self::$coverService !== null) {
+            return self::$coverService;
+        }
+        self::$coverService = new CoverService(
             self::config(),
             self::cacheStore(),
+            self::rateLimiter(),
             self::COLLECTION_SUBJECT_TYPES,
             self::COLLECTION_LIST_TYPES,
             self::COLLECTION_CACHE_VARIANT
         );
+        self::$coverService->cleanup();
+        return self::$coverService;
     }
 
     private static function requestParameters(): RequestParameters
@@ -93,7 +107,8 @@ class BangumiAPI
             self::config(),
             self::httpClient(),
             self::cacheStore(),
-            self::coverService()
+            self::coverService(),
+            self::rateLimiter()
         );
     }
 
@@ -112,6 +127,15 @@ class BangumiAPI
     public static function getApiBase(): string
     {
         return self::config()->apiBase();
+    }
+
+    public static function initializeCache(): bool
+    {
+        $initialized = self::cacheStore()->initialize();
+        if ($initialized) {
+            self::coverService();
+        }
+        return $initialized;
     }
 
     public static function buildApiUrl(string $path): string

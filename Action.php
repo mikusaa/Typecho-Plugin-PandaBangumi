@@ -44,6 +44,31 @@ class Action extends Contents implements ActionInterface
         return false;
     }
 
+    private function sendRateLimitResponse(RateLimitExceeded $error, bool $withJson): void
+    {
+        $retryAfter = (string)$error->retryAfter();
+        $body = $withJson ? BangumiAPI::encodeJson(array(
+            'error' => 'rate_limited',
+            'retry_after' => $error->retryAfter()
+        )) : '';
+        if (defined('PANDABANGUMI_TESTING') && PANDABANGUMI_TESTING === true) {
+            http_response_code(429);
+            echo $body;
+            return;
+        }
+
+        // Typecho 1.3 lacks a reason phrase for 429 but still sends the correct status.
+        set_error_handler(static function (int $severity, string $message, string $file): bool {
+            return $severity === E_WARNING
+                && str_contains($message, 'Undefined array key 429')
+                && basename($file) === 'Response.php';
+        });
+        $this->response->setStatus(429);
+        $this->response->setHeader('Retry-After', $retryAfter);
+        $this->response->setHeader('Content-Length', (string)strlen($body));
+        $this->response->throwContent($body, $withJson ? 'application/json' : 'text/plain');
+    }
+
     /**
      * 返回请求的 HTML
      * @access public
@@ -68,19 +93,24 @@ class Action extends Contents implements ActionInterface
             $subjectId = (int)($_GET['id'] ?? 0);
             $version = strtolower((string)($_GET['v'] ?? ''));
             $scope = strtolower((string)($_GET['scope'] ?? 'calendar'));
-            if ($scope === 'collection') {
-                $cover = BangumiAPI::getCollectionCover(
-                    $subjectId,
-                    $version,
-                    strtolower((string)($_GET['list'] ?? '')),
-                    strtolower((string)($_GET['cate'] ?? ''))
-                );
-            } elseif ($scope === 'subject') {
-                $cover = BangumiAPI::getSubjectCover($subjectId, $version);
-            } elseif ($scope === 'calendar') {
-                $cover = BangumiAPI::getCalendarCover($subjectId, $version);
-            } else {
-                $cover = array('status' => 404);
+            try {
+                if ($scope === 'collection') {
+                    $cover = BangumiAPI::getCollectionCover(
+                        $subjectId,
+                        $version,
+                        strtolower((string)($_GET['list'] ?? '')),
+                        strtolower((string)($_GET['cate'] ?? ''))
+                    );
+                } elseif ($scope === 'subject') {
+                    $cover = BangumiAPI::getSubjectCover($subjectId, $version);
+                } elseif ($scope === 'calendar') {
+                    $cover = BangumiAPI::getCalendarCover($subjectId, $version);
+                } else {
+                    $cover = array('status' => 404);
+                }
+            } catch (RateLimitExceeded $error) {
+                $this->sendRateLimitResponse($error, false);
+                return;
             }
 
             if (($cover['status'] ?? 404) === 404) {
@@ -125,7 +155,11 @@ class Action extends Contents implements ActionInterface
         header("Content-Type: application/json; charset=UTF-8");
 
         if ($type === 'subject') {
-            echo BangumiAPI::updateSubjectCacheAndReturn((int)($_GET['id'] ?? 0), $ValidTimeSpan);
+            try {
+                echo BangumiAPI::updateSubjectCacheAndReturn((int)($_GET['id'] ?? 0), $ValidTimeSpan);
+            } catch (RateLimitExceeded $error) {
+                $this->sendRateLimitResponse($error, true);
+            }
             return;
         }
 

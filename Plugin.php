@@ -20,11 +20,11 @@ if (!defined('__TYPECHO_ROOT_DIR__')) {
  *
  * @package PandaBangumi
  * @author 熊猫小A
- * @version 3.0.2.21
- * @link https://www.imalan.cn
+ * @version 3.0.3
+ * @link https://www.himiku.com/archives/pandabangumi.html
  */
 
-define('PandaBangumi_Plugin_VERSION', '3.0.2.21');
+define('PandaBangumi_Plugin_VERSION', '3.0.3');
 
 class Plugin implements PluginInterface
 {
@@ -50,6 +50,16 @@ class Plugin implements PluginInterface
         }
         if (!extension_loaded('curl')) {
             throw new PluginException('启用失败，PHP 需启用 CURL 扩展。');
+        }
+
+        require_once __DIR__ . '/BangumiAPI.php';
+        try {
+            $cacheInitialized = BangumiAPI::initializeCache();
+        } catch (\Throwable $error) {
+            $cacheInitialized = false;
+        }
+        if (!$cacheInitialized) {
+            throw new PluginException('启用失败，PandaBangumi 缓存目录不可写或无法完成安全初始化。');
         }
 
         \Typecho\Plugin::factory('Widget_Archive')->header = __CLASS__ . '::header';
@@ -78,7 +88,7 @@ class Plugin implements PluginInterface
      */
     public static function config(Form $form): void
     {
-        echo '作者：<a href="https://www.imalan.cn">熊猫小A</a>，插件介绍页：<a href="https://blog.imalan.cn/archives/128/">熊猫追番 (PandaBangumi) for Typecho</a><br>';
+        echo '作者：<a href="https://www.imalan.cn">熊猫小A</a>，插件介绍页：<a href="https://www.himiku.com/archives/pandabangumi.html">PandaBangumi 插件介绍与使用说明</a><br>';
         echo '<br><strong>使用方法，在文章要插入的地方写：</strong><br>';
         echo htmlspecialchars('在看动画：<div data-type="watching" data-cate="anime" class="bgm-collection"></div>');
         echo '<br>';

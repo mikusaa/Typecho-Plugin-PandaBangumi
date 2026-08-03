@@ -66,7 +66,7 @@ final class CalendarService
 
     private function calendarCache(int $validTimeSpan): array
     {
-        $filePath = $this->cacheStore->dataPath('calendar.json');
+        $filePath = $this->cacheStore->dataPath('calendar.php');
         $isCompatible = function (array $cache): bool {
             return isset($cache['data'])
                 && is_array($cache['data'])

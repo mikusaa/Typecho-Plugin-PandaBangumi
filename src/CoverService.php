@@ -7,7 +7,8 @@ final class CoverService
     private const COVER_SIZE = 'large';
     private const IMAGE_SIZES = array('small', 'grid', 'common', 'medium', 'large');
     private const MAX_BYTES = 5242880;
-    private const RETENTION = 7776000;
+    private const CACHE_MAX_BYTES = 536870912;
+    private const CACHE_MAX_ENTRIES = 2048;
     private const MIME_TYPES = array(
         'image/jpeg' => 'jpg',
         'image/png' => 'png',
@@ -18,9 +19,12 @@ final class CoverService
     public function __construct(
         private PluginConfig $config,
         private CacheStore $cacheStore,
+        private RateLimiter $rateLimiter,
         private array $collectionSubjectTypes,
         private array $collectionListTypes,
-        private string $collectionCacheVariant
+        private string $collectionCacheVariant,
+        private int $maxCacheEntries = self::CACHE_MAX_ENTRIES,
+        private int $maxCacheBytes = self::CACHE_MAX_BYTES
     ) {
     }
 
@@ -142,12 +146,12 @@ final class CoverService
 
     private function collectionFileName(string $list, string $category): string
     {
-        return $list . '-' . $category . '.json';
+        return $list . '-' . $category . '.php';
     }
 
     private function findCalendarSource(int $subjectId): string
     {
-        $cache = $this->cacheStore->read($this->cacheStore->dataPath('calendar.json'));
+        $cache = $this->cacheStore->read($this->cacheStore->dataPath('calendar.php'));
         foreach (($cache['data'] ?? array()) as $day) {
             foreach (($day['items'] ?? array()) as $item) {
                 if ((int)($item['id'] ?? 0) === $subjectId) {
@@ -181,7 +185,7 @@ final class CoverService
     private function findSubjectSource(int $subjectId): string
     {
         $cache = $this->cacheStore->read(
-            $this->cacheStore->directory('subjects') . '/' . $subjectId . '.json'
+            $this->cacheStore->subjectPath($subjectId)
         );
         $data = $cache['data'] ?? array();
         if (!is_array($data) || (int)($data['id'] ?? 0) !== $subjectId) {
@@ -230,33 +234,38 @@ final class CoverService
             return false;
         }
 
-        $lockHandle = @fopen($basePath . '.lock', 'c');
-        if ($lockHandle === false || !flock($lockHandle, LOCK_EX)) {
-            if (is_resource($lockHandle)) {
-                fclose($lockHandle);
-            }
-            return false;
+        $lockHandle = $this->cacheStore->acquireShardLock('cover', basename($basePath));
+        if ($lockHandle === false) {
+            throw new RateLimitExceeded(1);
         }
 
         if (count($this->findCached($basePath)) > 0) {
-            flock($lockHandle, LOCK_UN);
-            fclose($lockHandle);
+            $this->cacheStore->releaseRefreshLock($lockHandle);
             return true;
         }
 
         $target = $this->resolveFetchTarget($cover);
+        if ($target === null) {
+            $this->cacheStore->releaseRefreshLock($lockHandle);
+            return false;
+        }
+        try {
+            $this->rateLimiter->consumeCover();
+        } catch (RateLimitExceeded $error) {
+            $this->cacheStore->releaseRefreshLock($lockHandle);
+            throw $error;
+        }
         $tmpFile = tempnam($directory, 'pb_cover_');
         $fileHandle = $tmpFile !== false ? @fopen($tmpFile, 'wb') : false;
-        $curl = $fileHandle !== false && $target !== null ? curl_init($target['url']) : false;
-        if ($tmpFile === false || $fileHandle === false || $curl === false || $target === null) {
+        $curl = $fileHandle !== false ? curl_init($target['url']) : false;
+        if ($tmpFile === false || $fileHandle === false || $curl === false) {
             if (is_resource($fileHandle)) {
                 fclose($fileHandle);
             }
             if ($tmpFile !== false) {
                 @unlink($tmpFile);
             }
-            flock($lockHandle, LOCK_UN);
-            fclose($lockHandle);
+            $this->cacheStore->releaseRefreshLock($lockHandle);
             return false;
         }
 
@@ -307,6 +316,7 @@ final class CoverService
             $valid = @rename($tmpFile, $cachePath);
             if ($valid) {
                 @chmod($cachePath, 0644);
+                $this->cleanup(array(), $cachePath);
             }
         }
         if (!$valid) {
@@ -314,8 +324,7 @@ final class CoverService
             error_log('PandaBangumi cover request failed: HTTP ' . $httpCode . ' ' . $curlError);
         }
 
-        flock($lockHandle, LOCK_UN);
-        fclose($lockHandle);
+        $this->cacheStore->releaseRefreshLock($lockHandle);
         return $valid;
     }
 
@@ -420,13 +429,12 @@ final class CoverService
         }
 
         $name = basename($this->basePath($subjectId, $cover));
-        $referenced[$name . '.lock'] = true;
         foreach (array_unique(array_values(self::MIME_TYPES)) as $extension) {
             $referenced[$name . '.' . $extension] = true;
         }
     }
 
-    public function cleanup(array $calendar): void
+    public function cleanup(array $calendar = array(), string $currentFile = ''): void
     {
         $directory = $this->cacheStore->directory('covers');
         if (!is_dir($directory) || !is_readable($directory)) {
@@ -434,7 +442,17 @@ final class CoverService
         }
 
         $referenced = array();
+        if ($currentFile !== '') {
+            $referenced[basename($currentFile)] = true;
+        }
         foreach ($calendar as $day) {
+            foreach (($day['items'] ?? array()) as $item) {
+                $this->addReferenced($referenced, $item);
+            }
+        }
+
+        $calendarCache = $this->cacheStore->read($this->cacheStore->dataPath('calendar.php'));
+        foreach (($calendarCache['data'] ?? array()) as $day) {
             foreach (($day['items'] ?? array()) as $item) {
                 $this->addReferenced($referenced, $item);
             }
@@ -451,39 +469,64 @@ final class CoverService
             }
         }
 
-        $cutoff = time() - self::RETENTION;
-        $subjectDirectory = $this->cacheStore->directory('subjects');
-        $subjectEntries = is_readable($subjectDirectory) ? scandir($subjectDirectory) : false;
-        if (is_array($subjectEntries)) {
-            foreach ($subjectEntries as $entry) {
-                $subjectPath = $subjectDirectory . '/' . $entry;
-                $modified = is_file($subjectPath) ? filemtime($subjectPath) : false;
-                if ($modified === false || $modified < $cutoff || pathinfo($entry, PATHINFO_EXTENSION) !== 'json') {
-                    continue;
-                }
-
-                $subjectCache = $this->cacheStore->read($subjectPath);
-                $subject = $subjectCache['data'] ?? array();
-                if (is_array($subject)) {
-                    $this->addReferenced($referenced, $subject);
-                }
-            }
-        }
-
         $entries = scandir($directory);
         if ($entries === false) {
             return;
         }
+        $files = array();
         foreach ($entries as $entry) {
-            if ($entry === '.' || $entry === '..' || isset($referenced[$entry])) {
+            if ($entry === '.' || $entry === '..') {
                 continue;
             }
 
             $path = $directory . '/' . $entry;
             $modified = is_file($path) ? filemtime($path) : false;
-            if ($modified !== false && $modified < $cutoff) {
-                @unlink($path);
+            if ($modified === false) {
+                continue;
             }
+            if (str_ends_with($entry, '.lock') || str_starts_with($entry, 'pb_cover_')) {
+                if ($modified < $this->cacheStore->now() - 3600) {
+                    @unlink($path);
+                }
+                continue;
+            }
+            if (!preg_match('/^[1-9][0-9]*-[a-f0-9]{16}\.(?:jpg|png|webp|gif)$/', $entry)) {
+                continue;
+            }
+            $size = @filesize($path);
+            $files[] = array(
+                'name' => $entry,
+                'path' => $path,
+                'modified' => $modified,
+                'size' => $size === false ? 0 : max(0, $size),
+                'protected' => isset($referenced[$entry])
+            );
+        }
+
+        usort($files, static fn(array $left, array $right): int => $left['modified'] <=> $right['modified']);
+        $count = count($files);
+        $bytes = array_sum(array_column($files, 'size'));
+        foreach ($files as $file) {
+            if ($file['protected']) {
+                continue;
+            }
+            $overQuota = $count > max(0, $this->maxCacheEntries)
+                || $bytes > max(0, $this->maxCacheBytes);
+            if (!$overQuota) {
+                break;
+            }
+            if (@unlink($file['path'])) {
+                $count--;
+                $bytes -= $file['size'];
+                @unlink(substr($file['path'], 0, strrpos($file['path'], '.')) . '.lock');
+            }
+        }
+
+        if ($count > max(0, $this->maxCacheEntries) || $bytes > max(0, $this->maxCacheBytes)) {
+            error_log(
+                'PandaBangumi protected cover cache exceeds quota: '
+                . $count . ' files, ' . $bytes . ' bytes'
+            );
         }
     }
 }

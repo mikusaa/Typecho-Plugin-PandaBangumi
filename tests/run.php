@@ -8,6 +8,20 @@ namespace Typecho\Plugin {
     }
 }
 
+namespace Widget {
+    interface ActionInterface
+    {
+    }
+}
+
+namespace Widget\Base {
+    class Contents
+    {
+        public object $response;
+        public object $request;
+    }
+}
+
 namespace Utils {
     final class TestOptions
     {
@@ -30,12 +44,15 @@ namespace Utils {
 
 namespace {
     use TypechoPlugin\PandaBangumi\BangumiAPI;
+    use TypechoPlugin\PandaBangumi\Action;
     use TypechoPlugin\PandaBangumi\CacheStore;
     use TypechoPlugin\PandaBangumi\CalendarService;
     use TypechoPlugin\PandaBangumi\CollectionService;
     use TypechoPlugin\PandaBangumi\CoverService;
     use TypechoPlugin\PandaBangumi\HttpTransport;
     use TypechoPlugin\PandaBangumi\PluginConfig;
+    use TypechoPlugin\PandaBangumi\RateLimitExceeded;
+    use TypechoPlugin\PandaBangumi\RateLimiter;
     use TypechoPlugin\PandaBangumi\RequestParameters;
     use TypechoPlugin\PandaBangumi\SubjectService;
     use Utils\Helper;
@@ -46,7 +63,10 @@ namespace {
     }
 
     define('PandaBangumi_Plugin_VERSION', 'test');
+    define('PANDABANGUMI_TESTING', true);
+    define('__TYPECHO_ROOT_DIR__', dirname(__DIR__));
     require dirname(__DIR__) . '/BangumiAPI.php';
+    require dirname(__DIR__) . '/Action.php';
 
     const SUBJECT_TYPES = array('book' => 1, 'anime' => 2, 'music' => 3, 'game' => 4, 'real' => 6);
     const LIST_TYPES = array(
@@ -78,6 +98,34 @@ namespace {
         }
     }
 
+    final class TestResponse
+    {
+        public int $status = 200;
+        public array $headers = array();
+
+        public function setStatus(int $status): void
+        {
+            $this->status = $status;
+        }
+
+        public function setHeader(string $name, string $value): void
+        {
+            $this->headers[$name] = $value;
+        }
+
+        public function throwFile(string $file): void
+        {
+        }
+    }
+
+    final class TestRequest
+    {
+        public function getHeader(string $name, string $default = ''): string
+        {
+            return $default;
+        }
+    }
+
     function assertSameValue(mixed $expected, mixed $actual, string $message = ''): void
     {
         if ($expected !== $actual) {
@@ -92,6 +140,23 @@ namespace {
         if (!$actual) {
             throw new TestFailure($message !== '' ? $message : 'expected true');
         }
+    }
+
+    function assertRateLimited(callable $callback, int $retryAfter = 1): void
+    {
+        try {
+            $callback();
+        } catch (RateLimitExceeded $error) {
+            assertSameValue($retryAfter, $error->retryAfter());
+            return;
+        }
+        throw new TestFailure('expected RateLimitExceeded');
+    }
+
+    function setBangumiApiService(string $property, mixed $value): void
+    {
+        $reflection = new ReflectionProperty(BangumiAPI::class, $property);
+        $reflection->setValue(null, $value);
     }
 
     function fixture(string $name): string
@@ -128,9 +193,24 @@ namespace {
         return new PluginConfig(static fn(): object => (object)$options);
     }
 
-    function coverService(PluginConfig $config, CacheStore $cacheStore): CoverService
+    function coverService(
+        PluginConfig $config,
+        CacheStore $cacheStore,
+        ?RateLimiter $rateLimiter = null,
+        int $maxEntries = 2048,
+        int $maxBytes = 536870912
+    ): CoverService
     {
-        return new CoverService($config, $cacheStore, SUBJECT_TYPES, LIST_TYPES, COLLECTION_VARIANT);
+        return new CoverService(
+            $config,
+            $cacheStore,
+            $rateLimiter ?? new RateLimiter($cacheStore),
+            SUBJECT_TYPES,
+            LIST_TYPES,
+            COLLECTION_VARIANT,
+            $maxEntries,
+            $maxBytes
+        );
     }
 
     function collectionService(
@@ -154,6 +234,74 @@ namespace {
     $test = static function (string $name, callable $callback) use (&$tests): void {
         $tests[$name] = $callback;
     };
+
+    $test('Action returns rate limit response contracts', static function (): void {
+        $directory = testDirectory();
+        $originalGet = $_GET;
+        try {
+            $cacheStore = new CacheStore($directory, static fn(): int => 1000);
+            $rateLimiter = new RateLimiter($cacheStore);
+            $pluginConfig = config(array('ImageMode' => 'cache'));
+            $cover = coverService($pluginConfig, $cacheStore, $rateLimiter);
+            $subject = new SubjectService(
+                $pluginConfig,
+                new FakeHttpTransport(array()),
+                $cacheStore,
+                $cover,
+                $rateLimiter
+            );
+            $cacheStore->write($cacheStore->statePath('rate-limit.php'), array(
+                'version' => 1,
+                'buckets' => array(
+                    'subject' => array('tokens' => 0, 'updated_at' => 1000),
+                    'cover' => array('tokens' => 0, 'updated_at' => 1000)
+                )
+            ));
+
+            setBangumiApiService('config', $pluginConfig);
+            setBangumiApiService('cacheStore', $cacheStore);
+            setBangumiApiService('rateLimiter', $rateLimiter);
+            setBangumiApiService('coverService', $cover);
+            setBangumiApiService('subjectService', $subject);
+            Helper::$pluginOptions = (object)array('ImageMode' => 'cache', 'ValidTimeSpan' => 60);
+
+            $_GET = array('type' => 'subject', 'id' => 1000);
+            $subjectAction = new Action();
+            $subjectAction->response = new TestResponse();
+            $subjectAction->request = new TestRequest();
+            ob_start();
+            $subjectAction->action();
+            $body = (string)ob_get_clean();
+            assertSameValue(429, http_response_code());
+            assertSameValue(array('error' => 'rate_limited', 'retry_after' => 1), json_decode($body, true));
+
+            $source = 'https://1.1.1.1/cover.png';
+            $descriptor = $cover->describeSource($source);
+            $cacheStore->write($cacheStore->subjectPath(1001), array(
+                'time' => 1000,
+                'subject_id' => 1001,
+                'data' => array('id' => 1001, 'images' => array('large' => $source))
+            ));
+            $_GET = array(
+                'type' => 'cover',
+                'scope' => 'subject',
+                'id' => 1001,
+                'v' => $descriptor['version']
+            );
+            $coverAction = new Action();
+            $coverAction->response = new TestResponse();
+            $coverAction->request = new TestRequest();
+            $coverAction->action();
+            assertSameValue(429, http_response_code());
+        } finally {
+            http_response_code(200);
+            $_GET = $originalGet;
+            foreach (array('config', 'cacheStore', 'rateLimiter', 'coverService', 'subjectService') as $property) {
+                setBangumiApiService($property, null);
+            }
+            removeTestDirectory($directory);
+        }
+    });
 
     $test('API base normalization', static function (): void {
         Helper::$pluginOptions = (object)array('ApiBase' => '');
@@ -290,7 +438,7 @@ namespace {
             $service = coverService($pluginConfig, $cacheStore);
             $source = 'https://lain.bgm.tv/pic/cover/l/test-101.jpg';
             $descriptor = $service->describeSource($source);
-            $cacheStore->write($cacheStore->dataPath('calendar.json'), array(
+            $cacheStore->write($cacheStore->dataPath('calendar.php'), array(
                 'time' => time(),
                 'data' => array(array('items' => array(array(
                     'id' => 101,
@@ -318,7 +466,7 @@ namespace {
         $directory = testDirectory();
         try {
             $cacheStore = new CacheStore($directory, static fn(): int => 1000);
-            $file = $cacheStore->dataPath('cache.json');
+            $file = $cacheStore->dataPath('cache.php');
             $cache = array('time' => 1000, 'data' => array('ok' => true));
             assertTrueValue($cacheStore->write($file, $cache));
             assertSameValue($cache, $cacheStore->read($file));
@@ -333,6 +481,185 @@ namespace {
             $lock = $cacheStore->acquireRefreshLock($file);
             assertTrueValue(is_resource($lock));
             $cacheStore->releaseRefreshLock($lock);
+        } finally {
+            removeTestDirectory($directory);
+        }
+    });
+
+    $test('Protected cache format rejects unguarded data', static function (): void {
+        $directory = testDirectory();
+        try {
+            $cacheStore = new CacheStore($directory);
+            $file = $cacheStore->dataPath('protected.php');
+            $cache = array('time' => 1, 'data' => array('title' => 'test'));
+            assertTrueValue($cacheStore->write($file, $cache));
+            $raw = (string)file_get_contents($file);
+            assertTrueValue(str_starts_with($raw, CacheStore::PHP_PREFIX));
+            assertSameValue($cache, $cacheStore->read($file));
+
+            file_put_contents($file, json_encode($cache));
+            assertSameValue(array(), $cacheStore->read($file));
+            file_put_contents($file, "<?php exit; ?>\n" . json_encode($cache));
+            assertSameValue(array(), $cacheStore->read($file));
+        } finally {
+            removeTestDirectory($directory);
+        }
+    });
+
+    $test('Cache initialization deletes legacy data once', static function (): void {
+        $pluginDirectory = testDirectory();
+        $cacheDirectory = $pluginDirectory . '/cache';
+        try {
+            mkdir($cacheDirectory . '/data', 0700, true);
+            mkdir($cacheDirectory . '/subjects', 0700, true);
+            mkdir($cacheDirectory . '/covers', 0700, true);
+            mkdir($pluginDirectory . '/json/nested', 0700, true);
+            file_put_contents($cacheDirectory . '/data/calendar.json', '{}');
+            file_put_contents($cacheDirectory . '/subjects/1.json', '{}');
+            file_put_contents($cacheDirectory . '/subjects/1.json.refresh.lock', '');
+            file_put_contents($cacheDirectory . '/covers/1-test.lock', '');
+            file_put_contents($cacheDirectory . '/covers/1-test.jpg', 'cover');
+            file_put_contents($pluginDirectory . '/json/nested/cache.json', '{}');
+
+            $cacheStore = new CacheStore($cacheDirectory, static fn(): int => 1000);
+            assertSameValue(false, is_file($cacheDirectory . '/data/calendar.json'));
+            assertSameValue(false, is_file($cacheDirectory . '/subjects/1.json'));
+            assertSameValue(false, is_file($cacheDirectory . '/subjects/1.json.refresh.lock'));
+            assertSameValue(false, is_file($cacheDirectory . '/covers/1-test.lock'));
+            assertTrueValue(is_file($cacheDirectory . '/covers/1-test.jpg'));
+            assertSameValue(false, is_dir($pluginDirectory . '/json'));
+            assertSameValue(1, $cacheStore->read($cacheStore->statePath('layout.php'))['version']);
+
+            $current = $cacheStore->dataPath('calendar.php');
+            $cacheStore->write($current, array('time' => 1000, 'data' => array()));
+            assertTrueValue((new CacheStore($cacheDirectory, static fn(): int => 1001))->initialize());
+            assertTrueValue(is_file($current));
+        } finally {
+            removeTestDirectory($pluginDirectory);
+        }
+    });
+
+    $test('Rate limiter refills and fails closed', static function (): void {
+        $directory = testDirectory();
+        try {
+            $now = 1000;
+            $cacheStore = new CacheStore($directory, static function () use (&$now): int {
+                return $now;
+            });
+            $limiter = new RateLimiter($cacheStore);
+            $limiter->consume('test', 2, 1.0);
+            $limiter->consume('test', 2, 1.0);
+            assertRateLimited(static fn() => $limiter->consume('test', 2, 1.0));
+
+            $now = 1001;
+            $limiter->consume('test', 2, 1.0);
+            assertRateLimited(static fn() => $limiter->consume('test', 2, 1.0));
+
+            file_put_contents($cacheStore->statePath('rate-limit.php'), 'invalid');
+            assertRateLimited(static fn() => $limiter->consume('test', 2, 1.0));
+
+            $cacheStore->write($cacheStore->statePath('rate-limit.php'), array(
+                'version' => 1,
+                'buckets' => array('test' => array('tokens' => 'broken'))
+            ));
+            assertRateLimited(static fn() => $limiter->consume('test', 2, 1.0));
+        } finally {
+            removeTestDirectory($directory);
+        }
+    });
+
+    $test('Shard locks use at most 64 files per scope', static function (): void {
+        $directory = testDirectory();
+        try {
+            $cacheStore = new CacheStore($directory);
+            for ($id = 1; $id <= 512; $id++) {
+                $lock = $cacheStore->acquireShardLock('subject', (string)$id);
+                assertTrueValue(is_resource($lock));
+                $cacheStore->releaseRefreshLock($lock);
+            }
+            $locks = glob($cacheStore->directory('locks') . '/subject-*.lock');
+            assertTrueValue(is_array($locks) && count($locks) <= 64);
+            foreach ($locks as $lock) {
+                assertTrueValue((bool)preg_match('/subject-[0-9]{2}\.lock$/', $lock));
+            }
+        } finally {
+            removeTestDirectory($directory);
+        }
+    });
+
+    $test('Subject cache pruning preserves current entry', static function (): void {
+        $directory = testDirectory();
+        try {
+            $cacheStore = new CacheStore($directory);
+            for ($id = 1; $id <= 258; $id++) {
+                $path = $cacheStore->subjectPath($id);
+                $cacheStore->write($path, array('time' => $id, 'subject_id' => $id, 'data' => array('id' => $id)));
+                touch($path, 1000 + $id);
+            }
+            $cacheStore->pruneSubjectCaches(258, 256);
+            $files = glob($cacheStore->directory('subjects') . '/[0-9]*.php');
+            assertSameValue(256, is_array($files) ? count($files) : 0);
+            assertTrueValue(is_file($cacheStore->subjectPath(258)));
+            assertSameValue(false, is_file($cacheStore->subjectPath(1)));
+            assertSameValue(false, is_file($cacheStore->subjectPath(2)));
+        } finally {
+            removeTestDirectory($directory);
+        }
+    });
+
+    $test('Cover quotas preserve referenced and current files', static function (): void {
+        $directory = testDirectory();
+        try {
+            $cacheStore = new CacheStore($directory, static fn(): int => 10000);
+            $service = coverService(config(array('ImageMode' => 'cache')), $cacheStore, null, 2, 20);
+            $calendar = array(array('items' => array()));
+            $paths = array();
+            for ($id = 1; $id <= 3; $id++) {
+                $source = 'https://example.com/' . $id . '.jpg';
+                $descriptor = $service->describeSource($source);
+                $paths[$id] = $cacheStore->directory('covers') . '/' . $id . '-' . $descriptor['version'] . '.jpg';
+                file_put_contents($paths[$id], str_repeat((string)$id, 10));
+                touch($paths[$id], 1000 + $id);
+                if ($id === 1) {
+                    $calendar[0]['items'][] = array('id' => 1, 'images' => array('large' => $source));
+                }
+            }
+
+            $service->cleanup($calendar, $paths[3]);
+            assertTrueValue(is_file($paths[1]));
+            assertSameValue(false, is_file($paths[2]));
+            assertTrueValue(is_file($paths[3]));
+        } finally {
+            removeTestDirectory($directory);
+        }
+    });
+
+    $test('Subject cache hits do not consume rate tokens', static function (): void {
+        $directory = testDirectory();
+        try {
+            $cacheStore = new CacheStore($directory, static fn(): int => 1000);
+            $limiter = new RateLimiter($cacheStore);
+            $pluginConfig = config(array('ImageMode' => 'direct'));
+            $cover = coverService($pluginConfig, $cacheStore, $limiter);
+            $service = new SubjectService(
+                $pluginConfig,
+                new FakeHttpTransport(array()),
+                $cacheStore,
+                $cover,
+                $limiter
+            );
+            $cacheStore->write($cacheStore->statePath('rate-limit.php'), array(
+                'version' => 1,
+                'buckets' => array('subject' => array('tokens' => 0, 'updated_at' => 1000))
+            ));
+            $cacheStore->write($cacheStore->subjectPath(101), array(
+                'time' => 1000,
+                'subject_id' => 101,
+                'data' => json_decode(fixture('subject-response.json'), true)
+            ));
+
+            assertSameValue(101, json_decode($service->update(101, 60), true)['id']);
+            assertRateLimited(static fn() => $service->update(102, 60));
         } finally {
             removeTestDirectory($directory);
         }
@@ -372,7 +699,7 @@ namespace {
                 'https://api.bgm.tv/v0/users/tester/collections?subject_type=3&type=3&limit=30&offset=0',
                 $musicHttp->urls[0]
             );
-            assertTrueValue(is_file($cacheStore->dataPath('listening-music.json')));
+            assertTrueValue(is_file($cacheStore->dataPath('listening-music.php')));
 
             $listenedHttp = new FakeHttpTransport(array(fixture('collection-response.json')));
             $listenedService = collectionService(
@@ -386,7 +713,7 @@ namespace {
                 'https://api.bgm.tv/v0/users/tester/collections?subject_type=3&type=2&limit=30&offset=0',
                 $listenedHttp->urls[0]
             );
-            assertTrueValue(is_file($cacheStore->dataPath('listened-music.json')));
+            assertTrueValue(is_file($cacheStore->dataPath('listened-music.php')));
         } finally {
             removeTestDirectory($directory);
         }
@@ -402,7 +729,8 @@ namespace {
                 $pluginConfig,
                 new FakeHttpTransport(array(fixture('subject-response.json'))),
                 $cacheStore,
-                $cover
+                $cover,
+                new RateLimiter($cacheStore)
             );
 
             $subject = json_decode($service->update(101, 60), true);
