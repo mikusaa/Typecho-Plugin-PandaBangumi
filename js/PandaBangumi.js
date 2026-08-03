@@ -91,11 +91,11 @@ function safeImageUrl(value) {
 /**
  * 标准化收藏分类
  * @param {string} value
- * @returns {'book'|'anime'|'game'|'real'}
+ * @returns {'book'|'anime'|'music'|'game'|'real'}
  */
 function normalizeCollectionCategory(value) {
     const cate = String(value || '').toLowerCase();
-    return ['book', 'anime', 'game', 'real'].includes(cate) ? cate : 'anime';
+    return ['book', 'anime', 'music', 'game', 'real'].includes(cate) ? cate : 'anime';
 }
 
 /**
@@ -374,6 +374,7 @@ function createPosterCard(item, options) {
     const link = document.createElement('a');
     link.className = `bgm-poster-card bgm-poster-card--${type}`;
     link.dataset.id = String(item.id || '');
+    link.dataset.subjectType = cate;
     link.href = href;
     link.target = '_blank';
     link.rel = 'noopener noreferrer';
@@ -405,12 +406,13 @@ function createPosterCard(item, options) {
     overlay.appendChild(title);
 
     const isBook = cate === 'book';
+    const isMusic = cate === 'music';
     const current = isBook ? Math.max(0, Number(item.vol_status || 0)) : epStatus;
     const totalCount = isBook ? Math.max(0, Number(item.vol_count || 0)) : count;
     const hasProgress = !isBook || current > 0 || totalCount > 0;
     if (type === 'watching' && cate !== 'game' && hasProgress) {
         const total = totalCount > 0 ? String(totalCount) : '未知';
-        const unit = isBook ? ' 册' : '';
+        const unit = isBook ? ' 册' : isMusic ? ' 曲' : '';
         const progressText = document.createElement('span');
         progressText.className = 'bgm-poster-card__progress-text';
         progressText.textContent = `${String(current)} / ${total}${unit}`;
@@ -557,7 +559,7 @@ async function loadMoreBgm(action) {
             }
             return;
         }
-        console.error('加载更多番剧失败:', error);
+        console.error('加载更多收藏失败:', error);
         if (action.isConnected) {
             setCollectionActionState(action, 'retry');
         }
@@ -886,6 +888,20 @@ function formatSubjectCount(value, unit) {
 }
 
 /**
+ * 获取音乐条目的首要创作者或厂牌
+ * @param {Array} infobox
+ * @returns {string}
+ */
+function findMusicCredit(infobox) {
+    const keys = ['艺术家', '演唱', '表演者', '主唱', '作曲', '编曲', '厂牌'];
+    for (const key of keys) {
+        const value = normalizeSubjectText(findInfo(infobox, key));
+        if (value) return `${key} ${value}`;
+    }
+    return '';
+}
+
+/**
  * 将 Bangumi Subject 数据标准化为卡片展示模型
  * @param {object} data
  * @param {number} subjectId
@@ -909,6 +925,8 @@ function normalizeSubjectCardData(data, subjectId) {
     const ratingCountValue = Number(rating.total);
     const collectionCountValue = Number(source.collection && source.collection.collect);
     let primaryMeta = '';
+    let secondaryMeta = '';
+    let musicCredit = '';
 
     if (typeNumber === 1) {
         const volumeCount = Number(source.volumes || 0);
@@ -919,6 +937,14 @@ function normalizeSubjectCardData(data, subjectId) {
             findInfo(source.infobox, '话数') || (Number(source.total_episodes || 0) > 0 ? source.total_episodes : ''),
             '话'
         );
+    } else if (typeNumber === 3) {
+        const trackCount = Number(source.total_episodes || 0);
+        primaryMeta = formatSubjectCount(
+            trackCount > 0 ? trackCount : findInfo(source.infobox, '曲目数量'),
+            '曲'
+        );
+        secondaryMeta = formatSubjectCount(findInfo(source.infobox, '碟片数量'), '碟');
+        musicCredit = findMusicCredit(source.infobox);
     } else if (typeNumber === 4) {
         primaryMeta = normalizeSubjectText(findInfo(source.infobox, '平台') || source.platform);
     } else if (typeNumber === 6) {
@@ -953,6 +979,8 @@ function normalizeSubjectCardData(data, subjectId) {
             ? Math.floor(collectionCountValue)
             : null,
         primaryMeta,
+        secondaryMeta,
+        musicCredit,
         tags
     };
 }
@@ -1051,10 +1079,14 @@ function buildCardElement(data, subjectId) {
     title.textContent = cardData.title;
     content.appendChild(title);
 
-    if (cardData.originalTitle) {
+    const subtitleParts = [];
+    if (cardData.originalTitle) subtitleParts.push(cardData.originalTitle);
+    if (cardData.musicCredit) subtitleParts.push(cardData.musicCredit);
+    if (subtitleParts.length > 0) {
         const subtitle = document.createElement('p');
         subtitle.className = 'bgm-subject-card__subtitle';
-        subtitle.textContent = cardData.originalTitle;
+        if (cardData.typeKey === 'music') subtitle.classList.add('bgm-subject-card__subtitle--music');
+        subtitle.textContent = subtitleParts.join(' · ');
         content.appendChild(subtitle);
     }
 
@@ -1070,9 +1102,10 @@ function buildCardElement(data, subjectId) {
 
     const meta = document.createElement('div');
     meta.className = 'bgm-subject-card__meta';
-    if (cardData.primaryMeta) appendMetaItem(meta, cardData.primaryMeta);
+    if (cardData.primaryMeta) appendMetaItem(meta, cardData.primaryMeta, 'primary');
+    if (cardData.secondaryMeta) appendMetaItem(meta, cardData.secondaryMeta, 'secondary');
     if (cardData.collectionCount !== null) {
-        appendMetaItem(meta, `${cardData.collectionCount} 人收藏`);
+        appendMetaItem(meta, `${cardData.collectionCount} 人收藏`, 'collection');
     }
     if (meta.childElementCount > 0) footer.appendChild(meta);
 
@@ -1097,10 +1130,12 @@ function buildCardElement(data, subjectId) {
  * 追加元信息
  * @param {HTMLElement} container
  * @param {string} text
+ * @param {string} [kind]
  */
-function appendMetaItem(container, text) {
+function appendMetaItem(container, text, kind) {
     const item = document.createElement('span');
     item.className = 'bgm-subject-card__meta-item';
+    if (kind) item.classList.add(`bgm-subject-card__meta-item--${kind}`);
     item.textContent = String(text);
     container.appendChild(item);
 }
@@ -1113,6 +1148,7 @@ async function initCollection() {
     Array.from(document.querySelectorAll('.bgm-collection:not([data-bgm-initialized="1"])')).forEach(item => {
         item.dataset.bgmInitialized = '1';
         item.dataset.bgmOffset = '0';
+        item.dataset.cate = normalizeCollectionCategory(item.dataset.cate);
 
         const action = createCollectionActionButton();
         item.appendChild(action);

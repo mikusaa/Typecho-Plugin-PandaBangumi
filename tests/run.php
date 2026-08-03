@@ -48,7 +48,7 @@ namespace {
     define('PandaBangumi_Plugin_VERSION', 'test');
     require dirname(__DIR__) . '/BangumiAPI.php';
 
-    const SUBJECT_TYPES = array('book' => 1, 'anime' => 2, 'game' => 4, 'real' => 6);
+    const SUBJECT_TYPES = array('book' => 1, 'anime' => 2, 'music' => 3, 'game' => 4, 'real' => 6);
     const COLLECTION_VARIANT = 'category-v3';
     const CALENDAR_VARIANT = 'images-v2';
 
@@ -167,7 +167,8 @@ namespace {
     $test('Request parameter normalization', static function (): void {
         $parameters = new RequestParameters(SUBJECT_TYPES);
         assertSameValue('game', $parameters->category(array('cate' => 'GAME')));
-        assertSameValue('', $parameters->category(array('cate' => 'music')));
+        assertSameValue('music', $parameters->category(array('cate' => 'music')));
+        assertSameValue('', $parameters->category(array('cate' => 'podcast')));
         assertSameValue('watching', $parameters->calendarFilter(array('filter' => 'watching')));
         assertSameValue('all', $parameters->calendarFilter(array('filter' => 'unexpected')));
     });
@@ -230,7 +231,8 @@ namespace {
             assertSameValue(2, $page['next_offset']);
             assertSameValue(true, $page['has_more']);
             assertSameValue('https://bgm.tv/anime/list/test%20user/do', $service->moreUrl('test user', 'watching', 'anime'));
-            assertSameValue('', $service->moreUrl('test', 'watching', 'music'));
+            assertSameValue('https://bgm.tv/music/list/test/do', $service->moreUrl('test', 'watching', 'music'));
+            assertSameValue('', $service->moreUrl('test', 'watching', 'podcast'));
         } finally {
             removeTestDirectory($directory);
         }
@@ -332,6 +334,19 @@ namespace {
             $cached = json_decode($service->update('tester', 'watching', 'anime', 12, 0, 60), true);
             assertSameValue(array(101, 102), array_column($cached['items'], 'id'));
             assertSameValue(1, count($http->urls));
+
+            $musicHttp = new FakeHttpTransport(array(fixture('collection-response.json')));
+            $musicService = collectionService(
+                $pluginConfig,
+                $musicHttp,
+                $cacheStore,
+                coverService($pluginConfig, $cacheStore)
+            );
+            $musicService->update('tester', 'watching', 'music', 1, 0, 60);
+            assertSameValue(
+                'https://api.bgm.tv/v0/users/tester/collections?subject_type=3&type=3&limit=30&offset=0',
+                $musicHttp->urls[0]
+            );
         } finally {
             removeTestDirectory($directory);
         }

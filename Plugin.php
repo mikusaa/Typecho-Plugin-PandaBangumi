@@ -20,11 +20,11 @@ if (!defined('__TYPECHO_ROOT_DIR__')) {
  *
  * @package PandaBangumi
  * @author 熊猫小A
- * @version 3.0.2.15
+ * @version 3.0.2.16
  * @link https://www.imalan.cn
  */
 
-define('PandaBangumi_Plugin_VERSION', '3.0.2.15');
+define('PandaBangumi_Plugin_VERSION', '3.0.2.16');
 
 class Plugin implements PluginInterface
 {
@@ -88,6 +88,8 @@ class Plugin implements PluginInterface
         echo '<br>';
         echo htmlspecialchars('在玩游戏：<div data-type="watching" data-cate="game" class="bgm-collection"></div>');
         echo '<br>';
+        echo htmlspecialchars('在听音乐：<div data-type="watching" data-cate="music" class="bgm-collection"></div>');
+        echo '<br>';
         echo htmlspecialchars('已看动画：<div data-type="watched" data-cate="anime" class="bgm-collection"></div>');
         echo '<br>';
         echo htmlspecialchars('已看三次元：<div data-type="watched" data-cate="real" class="bgm-collection"></div>');
@@ -95,6 +97,8 @@ class Plugin implements PluginInterface
         echo htmlspecialchars('读过书籍：<div data-type="watched" data-cate="book" class="bgm-collection"></div>');
         echo '<br>';
         echo htmlspecialchars('玩过游戏：<div data-type="watched" data-cate="game" class="bgm-collection"></div>');
+        echo '<br>';
+        echo htmlspecialchars('听过音乐：<div data-type="watched" data-cate="music" class="bgm-collection"></div>');
         echo '<br>';
         echo htmlspecialchars('追番日历：<div data-filter="watching" class="bgm-calendar"></div>');
         echo '<br>';

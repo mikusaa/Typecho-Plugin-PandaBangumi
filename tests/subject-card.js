@@ -63,7 +63,9 @@ assert.equal(real.primaryMeta, '24 集');
 const music = normalized('music');
 assert.equal(music.typeKey, 'music');
 assert.equal(music.typeLabel, '音乐');
-assert.equal(music.primaryMeta, '');
+assert.equal(music.primaryMeta, '44 曲');
+assert.equal(music.secondaryMeta, '2 碟');
+assert.equal(music.musicCredit, '作曲 松本文紀(szak) / ピクセルビー');
 
 const unknown = normalized('unknown');
 assert.equal(unknown.typeKey, 'unknown');
@@ -78,6 +80,8 @@ assert.equal(missing.hasScore, false);
 assert.equal(missing.ratingCount, null);
 assert.equal(missing.collectionCount, null);
 assert.equal(missing.primaryMeta, '');
+assert.equal(missing.secondaryMeta, '');
+assert.equal(missing.musicCredit, '');
 assert.deepEqual(missing.tags, []);
 
 process.stdout.write('7 subject card fixture tests passed\n');

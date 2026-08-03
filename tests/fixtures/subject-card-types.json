@@ -50,10 +50,17 @@
     ]
   },
   "music": {
-    "id": 105,
-    "name": "Music Title",
+    "id": 163164,
+    "name": "サクラノ詩 サウンドトラックCD",
     "type": 3,
-    "date": "2026-01-01"
+    "date": "2015-12-27",
+    "summary": "PCソフト『サクラノ詩』サウンドトラック 全44曲を収録",
+    "total_episodes": 44,
+    "infobox": [
+      { "key": "厂牌", "value": "枕" },
+      { "key": "碟片数量", "value": "2" },
+      { "key": "作曲", "value": "松本文紀(szak) / ピクセルビー" }
+    ]
   },
   "unknown": {
     "id": 106,

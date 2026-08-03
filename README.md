@@ -46,6 +46,12 @@
 <div data-type="watching" data-cate="game" class="bgm-collection"></div>
 ```
 
+在听音乐（音乐收藏使用方形封面，进度单位为曲目）
+
+```html
+<div data-type="watching" data-cate="music" class="bgm-collection"></div>
+```
+
 已看动画
 
 ```html
@@ -70,12 +76,18 @@
 <div data-type="watched" data-cate="game" class="bgm-collection"></div>
 ```
 
+听过音乐
+
+```html
+<div data-type="watched" data-cate="music" class="bgm-collection"></div>
+```
+
 追番日历（去掉`data-filter="watching"`则显示所有番剧）
 ```html
 <div data-filter="watching" class="bgm-calendar"></div>
 ```
 
-Bangumi 单部 Subject 条目卡片（正式适配动画、书籍、游戏和三次元；音乐及未知类型使用通用降级展示）
+Bangumi 单部 Subject 条目卡片（正式适配动画、书籍、游戏、三次元和音乐；音乐使用方形封面并展示创作者、曲目数和碟片数）
 ```html
 <div class="bgm-card" data-id="Subject ID"></div>
 ```
