@@ -7,6 +7,7 @@ PandaBangumiRuntime.initTimer = PandaBangumiRuntime.initTimer || null;
 PandaBangumiRuntime.bound = PandaBangumiRuntime.bound || false;
 PandaBangumiRuntime.coverObserver = PandaBangumiRuntime.coverObserver || null;
 PandaBangumiRuntime.coverLoads = PandaBangumiRuntime.coverLoads || new Map();
+PandaBangumiRuntime.musicObiColors = PandaBangumiRuntime.musicObiColors || new Map();
 PandaBangumiRuntime.coverPreloadMargin = 0;
 window.PandaBangumi = PandaBangumiRuntime;
 
@@ -922,15 +923,167 @@ function formatSubjectCount(value, unit) {
 /**
  * 获取音乐条目的首要创作者或厂牌
  * @param {Array} infobox
- * @returns {string}
+ * @returns {{text: string, label: string, value: string}}
  */
 function findMusicCredit(infobox) {
-    const keys = ['艺术家', '演唱', '表演者', '主唱', '作曲', '编曲', '厂牌'];
-    for (const key of keys) {
+    const keys = {
+        '艺术家': 'ARTIST',
+        '演唱': 'VOCALS',
+        '表演者': 'PERFORMER',
+        '主唱': 'VOCALS',
+        '作曲': 'COMPOSER',
+        '编曲': 'ARRANGER',
+        '厂牌': 'LABEL'
+    };
+    for (const [key, label] of Object.entries(keys)) {
         const value = normalizeSubjectText(findInfo(infobox, key));
-        if (value) return `${key} ${value}`;
+        if (value) return { text: `${key} ${value}`, label, value };
     }
-    return '';
+    return { text: '', label: '', value: '' };
+}
+
+/**
+ * 将 RGB 转为 HSL。
+ * @param {number} red
+ * @param {number} green
+ * @param {number} blue
+ * @returns {{hue: number, saturation: number, lightness: number}}
+ */
+function rgbToHsl(red, green, blue) {
+    const r = red / 255;
+    const g = green / 255;
+    const b = blue / 255;
+    const max = Math.max(r, g, b);
+    const min = Math.min(r, g, b);
+    const lightness = (max + min) / 2;
+    const delta = max - min;
+    if (delta === 0) return { hue: 0, saturation: 0, lightness };
+
+    const saturation = delta / (1 - Math.abs(2 * lightness - 1));
+    let hue;
+    if (max === r) hue = ((g - b) / delta) % 6;
+    else if (max === g) hue = (b - r) / delta + 2;
+    else hue = (r - g) / delta + 4;
+    hue = ((hue * 60) + 360) % 360;
+    return { hue, saturation, lightness };
+}
+
+/**
+ * 将 HSL 转为 RGB。
+ * @param {number} hue
+ * @param {number} saturation
+ * @param {number} lightness
+ * @returns {number[]}
+ */
+function hslToRgb(hue, saturation, lightness) {
+    const chroma = (1 - Math.abs(2 * lightness - 1)) * saturation;
+    const segment = hue / 60;
+    const component = chroma * (1 - Math.abs((segment % 2) - 1));
+    const values = segment < 1 ? [chroma, component, 0]
+        : segment < 2 ? [component, chroma, 0]
+            : segment < 3 ? [0, chroma, component]
+                : segment < 4 ? [0, component, chroma]
+                    : segment < 5 ? [component, 0, chroma]
+                        : [chroma, 0, component];
+    const offset = lightness - chroma / 2;
+    return values.map(value => Math.round((value + offset) * 255));
+}
+
+/**
+ * 计算 RGB 的相对亮度。
+ * @param {number} red
+ * @param {number} green
+ * @param {number} blue
+ * @returns {number}
+ */
+function relativeLuminance(red, green, blue) {
+    const channels = [red, green, blue].map(value => {
+        const channel = value / 255;
+        return channel <= 0.04045
+            ? channel / 12.92
+            : ((channel + 0.055) / 1.055) ** 2.4;
+    });
+    return channels[0] * 0.2126 + channels[1] * 0.7152 + channels[2] * 0.0722;
+}
+
+/**
+ * 从缩采样像素中选取适合作为白字背景的代表色。
+ * @param {ArrayLike<number>} pixels
+ * @returns {string}
+ */
+function pickMusicObiColor(pixels) {
+    const buckets = Array.from({ length: 18 }, () => ({ weight: 0, red: 0, green: 0, blue: 0 }));
+    for (let index = 0; index < pixels.length; index += 4) {
+        if (pixels[index + 3] < 200) continue;
+        const red = pixels[index];
+        const green = pixels[index + 1];
+        const blue = pixels[index + 2];
+        const hsl = rgbToHsl(red, green, blue);
+        if (hsl.lightness < 0.07 || hsl.lightness > 0.93 || hsl.saturation < 0.14) continue;
+
+        const weight = (0.35 + hsl.saturation * 1.65)
+            * (1 - Math.abs(hsl.lightness - 0.5) * 0.8);
+        const bucket = buckets[Math.floor(hsl.hue / 20) % buckets.length];
+        bucket.weight += weight;
+        bucket.red += red * weight;
+        bucket.green += green * weight;
+        bucket.blue += blue * weight;
+    }
+
+    const winner = buckets.reduce((best, bucket) => bucket.weight > best.weight ? bucket : best);
+    if (winner.weight === 0) return '';
+
+    const average = [winner.red, winner.green, winner.blue]
+        .map(value => Math.round(value / winner.weight));
+    const hsl = rgbToHsl(average[0], average[1], average[2]);
+    const saturation = Math.min(0.7, Math.max(0.38, hsl.saturation));
+    let lightness = Math.min(0.4, Math.max(0.2, hsl.lightness));
+    let rgb = hslToRgb(hsl.hue, saturation, lightness);
+
+    while ((1.05 / (relativeLuminance(rgb[0], rgb[1], rgb[2]) + 0.05)) < 4.5 && lightness > 0.12) {
+        lightness -= 0.02;
+        rgb = hslToRgb(hsl.hue, saturation, lightness);
+    }
+    return `hsl(${Math.round(hsl.hue)}, ${Math.round(saturation * 100)}%, ${Math.round(lightness * 100)}%)`;
+}
+
+/**
+ * 仅对本站同源封面提取 Obi 颜色。
+ * @param {HTMLElement} card
+ * @param {HTMLImageElement} image
+ * @param {string} imageUrl
+ */
+function applyMusicObiColor(card, image, imageUrl) {
+    if (!card || !image || !imageUrl || !window.location) return;
+    let parsedUrl;
+    try {
+        parsedUrl = new URL(imageUrl, window.location.href);
+    } catch (error) {
+        return;
+    }
+    if (parsedUrl.origin !== window.location.origin) return;
+
+    const cacheKey = parsedUrl.href;
+    const cached = PandaBangumiRuntime.musicObiColors.get(cacheKey);
+    if (cached) {
+        card.style.setProperty('--pb-music-obi-color', cached);
+        return;
+    }
+
+    try {
+        const canvas = document.createElement('canvas');
+        canvas.width = 24;
+        canvas.height = 24;
+        const context = canvas.getContext('2d');
+        if (!context) return;
+        context.drawImage(image, 0, 0, canvas.width, canvas.height);
+        const color = pickMusicObiColor(context.getImageData(0, 0, canvas.width, canvas.height).data);
+        if (!color) return;
+        PandaBangumiRuntime.musicObiColors.set(cacheKey, color);
+        card.style.setProperty('--pb-music-obi-color', color);
+    } catch (error) {
+        // 直连图片或不支持 Canvas 的浏览器继续使用默认色。
+    }
 }
 
 /**
@@ -958,7 +1111,7 @@ function normalizeSubjectCardData(data, subjectId) {
     const collectionCountValue = Number(source.collection && source.collection.collect);
     let primaryMeta = '';
     let secondaryMeta = '';
-    let musicCredit = '';
+    let musicCredit = { text: '', label: '', value: '' };
 
     if (typeNumber === 1) {
         const volumeCount = Number(source.volumes || 0);
@@ -1012,7 +1165,9 @@ function normalizeSubjectCardData(data, subjectId) {
             : null,
         primaryMeta,
         secondaryMeta,
-        musicCredit,
+        musicCredit: musicCredit.text,
+        musicCreditLabel: musicCredit.label,
+        musicCreditValue: musicCredit.value,
         tags
     };
 }
@@ -1026,6 +1181,7 @@ function normalizeSubjectCardData(data, subjectId) {
 function buildCardElement(data, subjectId) {
     const cardData = normalizeSubjectCardData(data, subjectId);
     const bangumiUrl = `https://bgm.tv/subject/${subjectId}`;
+    const isMusic = cardData.typeKey === 'music';
 
     const wrapper = document.createElement('a');
     wrapper.href = bangumiUrl;
@@ -1034,6 +1190,31 @@ function buildCardElement(data, subjectId) {
     wrapper.className = 'bgm-subject-card';
     wrapper.dataset.subjectType = cardData.typeKey;
     wrapper.setAttribute('aria-label', `${cardData.typeLabel}《${cardData.title}》，在 Bangumi 查看`);
+
+    if (isMusic) {
+        const obi = document.createElement('div');
+        obi.className = 'bgm-subject-card__obi';
+        obi.setAttribute('aria-hidden', 'true');
+
+        const obiLabel = document.createElement('span');
+        obiLabel.className = 'bgm-subject-card__obi-label';
+        obiLabel.textContent = 'Music Album';
+        obi.appendChild(obiLabel);
+
+        const obiId = document.createElement('span');
+        obiId.className = 'bgm-subject-card__obi-id';
+        obiId.textContent = `Bangumi Subject ${subjectId}`;
+        obi.appendChild(obiId);
+
+        const releaseYear = cardData.date.match(/^\d{4}/);
+        if (releaseYear) {
+            const obiYear = document.createElement('span');
+            obiYear.className = 'bgm-subject-card__obi-year';
+            obiYear.textContent = releaseYear[0];
+            obi.appendChild(obiYear);
+        }
+        wrapper.appendChild(obi);
+    }
 
     const poster = document.createElement('div');
     poster.className = 'bgm-subject-card__poster';
@@ -1047,6 +1228,7 @@ function buildCardElement(data, subjectId) {
         img.addEventListener('load', () => {
             poster.classList.remove('is-cover-loading', 'is-cover-error');
             poster.classList.add('is-cover-loaded');
+            if (isMusic) applyMusicObiColor(wrapper, img, cardData.posterUrl);
         }, { once: true });
         img.addEventListener('error', () => {
             poster.classList.remove('is-cover-loading', 'is-cover-loaded');
@@ -1057,7 +1239,14 @@ function buildCardElement(data, subjectId) {
         poster.classList.add('is-cover-error');
     }
     poster.appendChild(img);
-    wrapper.appendChild(poster);
+    if (isMusic) {
+        const caseEl = document.createElement('div');
+        caseEl.className = 'bgm-subject-card__case';
+        caseEl.appendChild(poster);
+        wrapper.appendChild(caseEl);
+    } else {
+        wrapper.appendChild(poster);
+    }
 
     const content = document.createElement('div');
     content.className = 'bgm-subject-card__content';
@@ -1069,8 +1258,8 @@ function buildCardElement(data, subjectId) {
     eyebrow.className = 'bgm-subject-card__eyebrow';
 
     const type = document.createElement('span');
-    type.className = 'bgm-subject-card__type';
-    type.textContent = cardData.typeLabel;
+    type.className = isMusic ? 'bgm-subject-card__kind' : 'bgm-subject-card__type';
+    type.textContent = isMusic ? 'ALBUM' : cardData.typeLabel;
     eyebrow.appendChild(type);
 
     if (cardData.date) {
@@ -1111,14 +1300,24 @@ function buildCardElement(data, subjectId) {
     title.textContent = cardData.title;
     content.appendChild(title);
 
-    const subtitleParts = [];
-    if (cardData.originalTitle) subtitleParts.push(cardData.originalTitle);
-    if (cardData.musicCredit) subtitleParts.push(cardData.musicCredit);
-    if (subtitleParts.length > 0) {
+    if (isMusic && (cardData.musicCreditValue || cardData.originalTitle)) {
+        const credit = document.createElement('div');
+        credit.className = 'bgm-subject-card__credit';
+
+        const creditLabel = document.createElement('span');
+        creditLabel.className = 'bgm-subject-card__credit-label';
+        creditLabel.textContent = cardData.musicCreditLabel || 'ORIGINAL';
+        credit.appendChild(creditLabel);
+
+        const creditName = document.createElement('span');
+        creditName.className = 'bgm-subject-card__credit-name';
+        creditName.textContent = cardData.musicCreditValue || cardData.originalTitle;
+        credit.appendChild(creditName);
+        content.appendChild(credit);
+    } else if (cardData.originalTitle) {
         const subtitle = document.createElement('p');
         subtitle.className = 'bgm-subject-card__subtitle';
-        if (cardData.typeKey === 'music') subtitle.classList.add('bgm-subject-card__subtitle--music');
-        subtitle.textContent = subtitleParts.join(' · ');
+        subtitle.textContent = cardData.originalTitle;
         content.appendChild(subtitle);
     }
 
@@ -1132,14 +1331,25 @@ function buildCardElement(data, subjectId) {
     const footer = document.createElement('div');
     footer.className = 'bgm-subject-card__footer';
 
-    const meta = document.createElement('div');
-    meta.className = 'bgm-subject-card__meta';
-    if (cardData.primaryMeta) appendMetaItem(meta, cardData.primaryMeta, 'primary');
-    if (cardData.secondaryMeta) appendMetaItem(meta, cardData.secondaryMeta, 'secondary');
-    if (cardData.collectionCount !== null) {
-        appendMetaItem(meta, `${cardData.collectionCount} 人收藏`, 'collection');
+    if (isMusic) {
+        const specs = document.createElement('div');
+        specs.className = 'bgm-subject-card__specs';
+        if (cardData.primaryMeta) appendMusicSpec(specs, 'TRACKS', cardData.primaryMeta, 'tracks');
+        if (cardData.secondaryMeta) appendMusicSpec(specs, 'DISCS', cardData.secondaryMeta, 'discs');
+        if (cardData.collectionCount !== null) {
+            appendMusicSpec(specs, 'COLLECTIONS', `${cardData.collectionCount} 人`, 'collection');
+        }
+        if (specs.childElementCount > 0) footer.appendChild(specs);
+    } else {
+        const meta = document.createElement('div');
+        meta.className = 'bgm-subject-card__meta';
+        if (cardData.primaryMeta) appendMetaItem(meta, cardData.primaryMeta, 'primary');
+        if (cardData.secondaryMeta) appendMetaItem(meta, cardData.secondaryMeta, 'secondary');
+        if (cardData.collectionCount !== null) {
+            appendMetaItem(meta, `${cardData.collectionCount} 人收藏`, 'collection');
+        }
+        if (meta.childElementCount > 0) footer.appendChild(meta);
     }
-    if (meta.childElementCount > 0) footer.appendChild(meta);
 
     if (cardData.tags.length > 0) {
         const tags = document.createElement('div');
@@ -1156,6 +1366,29 @@ function buildCardElement(data, subjectId) {
     content.appendChild(footer);
     wrapper.appendChild(content);
     return wrapper;
+}
+
+/**
+ * 追加音乐专辑规格。
+ * @param {HTMLElement} container
+ * @param {string} label
+ * @param {string} value
+ * @param {string} kind
+ */
+function appendMusicSpec(container, label, value, kind) {
+    const spec = document.createElement('span');
+    spec.className = `bgm-subject-card__spec bgm-subject-card__spec--${kind}`;
+
+    const labelEl = document.createElement('span');
+    labelEl.className = 'bgm-subject-card__spec-label';
+    labelEl.textContent = label;
+    spec.appendChild(labelEl);
+
+    const valueEl = document.createElement('span');
+    valueEl.className = 'bgm-subject-card__spec-value';
+    valueEl.textContent = value;
+    spec.appendChild(valueEl);
+    container.appendChild(spec);
 }
 
 /**

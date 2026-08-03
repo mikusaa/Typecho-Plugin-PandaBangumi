@@ -32,6 +32,9 @@ vm.runInContext(source, sandbox, { filename: 'PandaBangumi.js' });
 const normalize = vm.runInContext('normalizeSubjectCardData', sandbox);
 const normalizeCollection = vm.runInContext('normalizeCollectionType', sandbox);
 const isCompletedCollection = vm.runInContext('isCompletedCollectionType', sandbox);
+const pickMusicObiColor = vm.runInContext('pickMusicObiColor', sandbox);
+const hslToRgb = vm.runInContext('hslToRgb', sandbox);
+const relativeLuminance = vm.runInContext('relativeLuminance', sandbox);
 
 function normalized(name) {
     const fixture = fixtures[name];
@@ -68,6 +71,8 @@ assert.equal(music.typeLabel, '音乐');
 assert.equal(music.primaryMeta, '44 曲');
 assert.equal(music.secondaryMeta, '2 碟');
 assert.equal(music.musicCredit, '作曲 松本文紀(szak) / ピクセルビー');
+assert.equal(music.musicCreditLabel, 'COMPOSER');
+assert.equal(music.musicCreditValue, '松本文紀(szak) / ピクセルビー');
 
 const unknown = normalized('unknown');
 assert.equal(unknown.typeKey, 'unknown');
@@ -84,7 +89,30 @@ assert.equal(missing.collectionCount, null);
 assert.equal(missing.primaryMeta, '');
 assert.equal(missing.secondaryMeta, '');
 assert.equal(missing.musicCredit, '');
+assert.equal(missing.musicCreditLabel, '');
+assert.equal(missing.musicCreditValue, '');
 assert.deepEqual(missing.tags, []);
+
+const neutralPixels = new Uint8ClampedArray([
+    255, 255, 255, 255,
+    32, 32, 32, 255,
+    128, 128, 128, 255
+]);
+assert.equal(pickMusicObiColor(neutralPixels), '');
+
+const representativePixels = new Uint8ClampedArray([
+    248, 248, 248, 255,
+    63, 83, 141, 255,
+    64, 82, 138, 255,
+    150, 72, 54, 255
+]);
+const representativeColor = pickMusicObiColor(representativePixels);
+assert.match(representativeColor, /^hsl\(22\d, /);
+
+const colorParts = representativeColor.match(/[\d.]+/g).map(Number);
+const colorRgb = hslToRgb(colorParts[0], colorParts[1] / 100, colorParts[2] / 100);
+const whiteContrast = 1.05 / (relativeLuminance(colorRgb[0], colorRgb[1], colorRgb[2]) + 0.05);
+assert.ok(whiteContrast >= 4.5);
 
 const collectionTypes = {
     anime: ['watching', 'watched'],
@@ -100,4 +128,4 @@ Object.entries(collectionTypes).forEach(([category, [active, completed]]) => {
     assert.equal(isCompletedCollection(completed, category), true);
 });
 
-process.stdout.write('7 subject card fixtures and 10 collection type mappings passed\n');
+process.stdout.write('7 subject card fixtures, 10 collection type mappings, and 3 palette checks passed\n');

@@ -87,7 +87,7 @@
 <div data-filter="watching" class="bgm-calendar"></div>
 ```
 
-Bangumi 单部 Subject 条目卡片（正式适配动画、书籍、游戏、三次元和音乐；音乐使用方形封面并展示创作者、曲目数和碟片数）
+Bangumi 单部 Subject 条目卡片（正式适配动画、书籍、游戏、三次元和音乐；音乐使用方形封面、实体 CD 侧标和专辑规格栏，并展示创作者、曲目数和碟片数；本站缓存模式会根据封面代表色调整侧标）
 ```html
 <div class="bgm-card" data-id="Subject ID"></div>
 ```
