@@ -4,6 +4,8 @@ namespace TypechoPlugin\PandaBangumi;
 
 final class RateLimiter
 {
+    private const STATE_LOCK_WAIT_MILLISECONDS = 50;
+
     public function __construct(private CacheStore $cacheStore)
     {
     }
@@ -22,7 +24,11 @@ final class RateLimiter
     {
         $capacity = max(1, $capacity);
         $refillPerSecond = max(0.001, $refillPerSecond);
-        $lockHandle = $this->cacheStore->acquireShardLock('rate-limit', 'global');
+        $lockHandle = $this->cacheStore->acquireShardLockWithWait(
+            'rate-limit',
+            'global',
+            self::STATE_LOCK_WAIT_MILLISECONDS
+        );
         if ($lockHandle === false) {
             throw new RateLimitExceeded(1);
         }

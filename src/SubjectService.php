@@ -62,22 +62,37 @@ final class SubjectService
                     $stored = $this->cacheStore->read($filePath);
                     $cache = $this->cacheStore->usable($filePath, $validTimeSpan, $stored, $isCompatible);
                     if ($cache === null) {
-                        $json = $this->http->get($this->config->buildApiUrl('/v0/subjects/' . $subjectId));
-                        $data = $json !== false ? json_decode($json, true) : null;
-                        if (is_array($data) && (int)($data['id'] ?? 0) === $subjectId) {
-                            $cache = array(
-                                'time' => $this->cacheStore->now(),
-                                'subject_id' => $subjectId,
-                                'data' => $data
-                            );
-                            if ($this->cacheStore->write($filePath, $cache)) {
-                                $this->cacheStore->pruneSubjectCaches($subjectId);
+                        try {
+                            $json = $this->http->get($this->config->buildApiUrl('/v0/subjects/' . $subjectId));
+                        } catch (RateLimitExceeded $error) {
+                            if ($isCompatible($stored)) {
+                                $cache = $this->cacheStore->deferRefresh(
+                                    $filePath,
+                                    $stored,
+                                    max(30, $error->retryAfter())
+                                );
+                            } else {
+                                throw $error;
                             }
-                        } else {
-                            $fallback = $isCompatible($stored)
-                                ? $stored
-                                : array('time' => 1, 'subject_id' => $subjectId, 'data' => array());
-                            $cache = $this->cacheStore->deferRefresh($filePath, $fallback);
+                            $json = false;
+                        }
+                        if ($cache === null) {
+                            $data = $json !== false ? json_decode($json, true) : null;
+                            if (is_array($data) && (int)($data['id'] ?? 0) === $subjectId) {
+                                $cache = array(
+                                    'time' => $this->cacheStore->now(),
+                                    'subject_id' => $subjectId,
+                                    'data' => $data
+                                );
+                                if ($this->cacheStore->write($filePath, $cache)) {
+                                    $this->cacheStore->pruneSubjectCaches($subjectId);
+                                }
+                            } else {
+                                $fallback = $isCompatible($stored)
+                                    ? $stored
+                                    : array('time' => 1, 'subject_id' => $subjectId, 'data' => array());
+                                $cache = $this->cacheStore->deferRefresh($filePath, $fallback);
+                            }
                         }
                     }
                 } finally {

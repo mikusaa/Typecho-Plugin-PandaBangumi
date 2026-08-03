@@ -141,7 +141,18 @@ final class CollectionService
                 return $this->normalize($cache);
             }
 
-            $result = $this->fetchRaw($userId, $status, $this->subjectTypes[$category], $userLimit);
+            try {
+                $result = $this->fetchRaw($userId, $status, $this->subjectTypes[$category], $userLimit);
+            } catch (RateLimitExceeded $error) {
+                if ($isCompatible($stored)) {
+                    return $this->normalize($this->cacheStore->deferRefresh(
+                        $filePath,
+                        $stored,
+                        max(30, $error->retryAfter())
+                    ));
+                }
+                throw $error;
+            }
             $newCache = array(
                 'time' => $this->cacheStore->now(),
                 'data_variant' => $this->cacheVariant,

@@ -23,7 +23,11 @@ const sandbox = {
     setTimeout,
     window: {
         PandaBangumi: {},
-        bgmBase: 'https://blog.example/PandaBangumi'
+        bgmBase: 'https://blog.example/PandaBangumi',
+        location: {
+            href: 'https://blog.example/post',
+            origin: 'https://blog.example'
+        }
     }
 };
 
@@ -41,6 +45,9 @@ const relativeLuminance = vm.runInContext('relativeLuminance', sandbox);
 const createRequestQueue = vm.runInContext('createRequestQueue', sandbox);
 const abortPendingRequests = vm.runInContext('abortPendingRequests', sandbox);
 const createRequestController = vm.runInContext('createRequestController', sandbox);
+const centerCalendarTab = vm.runInContext('centerCalendarTab', sandbox);
+const fetchJson = vm.runInContext('fetchJson', sandbox);
+const loadImageResource = vm.runInContext('loadImageResource', sandbox);
 
 function normalized(name) {
     const fixture = fixtures[name];
@@ -139,6 +146,41 @@ assert.equal(shouldShowProgress('watching', 'anime', true), true);
 assert.equal(shouldShowProgress('watched', 'anime', true), false);
 assert.equal(shouldShowProgress('playing', 'game', true), false);
 
+const calendarScrollCalls = [];
+const calendarTabs = {
+    clientWidth: 300,
+    scrollWidth: 700,
+    scrollLeft: 100,
+    getBoundingClientRect: () => ({ left: 50 }),
+    scrollTo: options => calendarScrollCalls.push(options)
+};
+centerCalendarTab(calendarTabs, {
+    getBoundingClientRect: () => ({ left: 400, width: 80 })
+});
+assert.deepEqual(JSON.parse(JSON.stringify(calendarScrollCalls)), [{ left: 340, behavior: 'smooth' }]);
+
+centerCalendarTab({
+    clientWidth: 300,
+    scrollWidth: 300,
+    scrollLeft: 0,
+    getBoundingClientRect: () => ({ left: 0 }),
+    scrollTo: () => calendarScrollCalls.push('no-overflow')
+}, {
+    getBoundingClientRect: () => ({ left: 0, width: 80 })
+});
+assert.equal(calendarScrollCalls.length, 1);
+
+const fallbackTabs = {
+    clientWidth: 200,
+    scrollWidth: 500,
+    scrollLeft: 20,
+    getBoundingClientRect: () => ({ left: 40 })
+};
+centerCalendarTab(fallbackTabs, {
+    getBoundingClientRect: () => ({ left: 0, width: 80 })
+});
+assert.equal(fallbackTabs.scrollLeft, 0);
+
 async function testRequestQueue() {
     const queue = createRequestQueue(2);
     const started = [];
@@ -184,8 +226,129 @@ async function testRequestQueue() {
     assert.deepEqual(JSON.parse(JSON.stringify(pjaxQueue.stats())), { active: 0, waiting: 0 });
 }
 
-testRequestQueue().then(() => {
-    process.stdout.write('7 subject card fixtures, 10 collection type mappings, 4 progress cases, 3 palette checks, and request queue checks passed\n');
+function fakeResponse(status, data = {}, retryAfter = '') {
+    return {
+        ok: status >= 200 && status < 300,
+        status,
+        headers: { get: name => name === 'Retry-After' ? retryAfter : null },
+        json: async () => data
+    };
+}
+
+async function testRequestRetries() {
+    sandbox.window.PandaBangumi.requestQueue = createRequestQueue(2);
+    let calls = 0;
+    sandbox.fetch = async () => {
+        calls++;
+        return calls === 1
+            ? fakeResponse(429, {}, '0')
+            : fakeResponse(200, { ok: true });
+    };
+    const recovered = await fetchJson(
+        'https://blog.example/PandaBangumi?type=calendar',
+        new AbortController().signal
+    );
+    assert.deepEqual(JSON.parse(JSON.stringify(recovered)), { ok: true });
+    assert.equal(calls, 2);
+
+    calls = 0;
+    sandbox.fetch = async () => {
+        calls++;
+        return fakeResponse(500);
+    };
+    await assert.rejects(
+        fetchJson('https://blog.example/PandaBangumi?type=calendar', new AbortController().signal),
+        error => error.status === 500
+    );
+    assert.equal(calls, 1);
+
+    calls = 0;
+    sandbox.fetch = async () => {
+        calls++;
+        return fakeResponse(429, {}, '0');
+    };
+    await assert.rejects(
+        fetchJson('https://blog.example/PandaBangumi?type=calendar', new AbortController().signal),
+        error => error.status === 429
+    );
+    assert.equal(calls, 3);
+
+    calls = 0;
+    sandbox.fetch = async () => {
+        calls++;
+        return fakeResponse(429, {}, '1');
+    };
+    const controller = new AbortController();
+    const abortedRetry = fetchJson(
+        'https://blog.example/PandaBangumi?type=calendar',
+        controller.signal
+    );
+    await new Promise(resolve => setImmediate(resolve));
+    controller.abort();
+    await assert.rejects(abortedRetry, error => error.name === 'AbortError');
+    assert.equal(calls, 1);
+}
+
+async function testLocalCoverRetry() {
+    const originalSetTimeout = sandbox.setTimeout;
+    const originalClearTimeout = sandbox.clearTimeout;
+    sandbox.setTimeout = callback => {
+        Promise.resolve().then(callback);
+        return 1;
+    };
+    sandbox.clearTimeout = () => {};
+
+    class FakeImage {
+        constructor(failures) {
+            this.failures = failures;
+            this.attempts = 0;
+            this.onload = null;
+            this.onerror = null;
+        }
+
+        set src(value) {
+            this.attempts++;
+            const attempt = this.attempts;
+            Promise.resolve().then(() => {
+                const callback = attempt <= this.failures ? this.onerror : this.onload;
+                if (callback) callback();
+            });
+        }
+
+        removeAttribute() {}
+    }
+
+    try {
+        sandbox.window.PandaBangumi.requestQueue = createRequestQueue(2);
+        const localImage = new FakeImage(1);
+        await loadImageResource(
+            localImage,
+            'https://blog.example/PandaBangumi?type=cover&id=101&v=1234567890abcdef',
+            new AbortController().signal
+        );
+        assert.equal(localImage.attempts, 2);
+
+        const externalImage = new FakeImage(1);
+        await assert.rejects(loadImageResource(
+            externalImage,
+            'https://lain.bgm.tv/pic/cover/l/test.jpg',
+            new AbortController().signal
+        ));
+        assert.equal(externalImage.attempts, 1);
+    } finally {
+        sandbox.setTimeout = originalSetTimeout;
+        sandbox.clearTimeout = originalClearTimeout;
+    }
+}
+
+async function runAsyncTests() {
+    await testRequestQueue();
+    await testRequestRetries();
+    await testLocalCoverRetry();
+}
+
+runAsyncTests().then(() => {
+    process.stdout.write('7 subject card fixtures, 10 collection type mappings, 4 progress cases, 3 palette checks, calendar scroll, request queue, and retry checks passed\n');
 }).catch(error => {
     console.error(error);
     process.exitCode = 1;

@@ -94,7 +94,18 @@ final class CalendarService
                 return $this->normalize($cache);
             }
 
-            $raw = $this->fetchRaw();
+            try {
+                $raw = $this->fetchRaw();
+            } catch (RateLimitExceeded $error) {
+                if ($isCompatible($stored)) {
+                    return $this->normalize($this->cacheStore->deferRefresh(
+                        $filePath,
+                        $stored,
+                        max(30, $error->retryAfter())
+                    ));
+                }
+                throw $error;
+            }
             if ($raw !== null) {
                 $cache = array(
                     'time' => $this->cacheStore->now(),

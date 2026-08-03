@@ -114,6 +114,17 @@ namespace {
         }
     }
 
+    final class RateLimitedHttpTransport implements HttpTransport
+    {
+        public int $calls = 0;
+
+        public function get(string $url): bool|string
+        {
+            $this->calls++;
+            throw new RateLimitExceeded(1);
+        }
+    }
+
     final class TestResponse
     {
         public int $status = 200;
@@ -579,6 +590,8 @@ namespace {
             assertSameValue(1, $cacheStore->freshness($file, 60));
             $deferred = $cacheStore->deferRefresh($file, $expired);
             assertSameValue(1300, $deferred['retry_after']);
+            $shortDeferred = $cacheStore->deferRefresh($file, $expired, 30);
+            assertSameValue(1030, $shortDeferred['retry_after']);
 
             $lock = $cacheStore->acquireRefreshLock($file);
             assertTrueValue(is_resource($lock));
@@ -863,6 +876,73 @@ namespace {
 
             assertSameValue(101, json_decode($service->update(101, 60), true)['id']);
             assertRateLimited(static fn() => $service->update(102, 60));
+        } finally {
+            removeTestDirectory($directory);
+        }
+    });
+
+    $test('Rate-limited refreshes serve compatible stale JSON caches', static function (): void {
+        $directory = testDirectory();
+        try {
+            $pluginConfig = config(array('Limit' => 2, 'ImageMode' => 'direct'));
+            $cacheStore = new CacheStore($directory, static fn(): int => 1000);
+            $cover = coverService($pluginConfig, $cacheStore);
+            $http = new RateLimitedHttpTransport();
+
+            $subjectData = json_decode(fixture('subject-response.json'), true);
+            $subjectPath = $cacheStore->subjectPath(101);
+            $cacheStore->write($subjectPath, array(
+                'time' => 900,
+                'subject_id' => 101,
+                'data' => $subjectData
+            ));
+            $subject = new SubjectService($pluginConfig, $http, $cacheStore, $cover);
+            assertSameValue(101, json_decode($subject->update(101, 60), true)['id']);
+            assertSameValue(1030, $cacheStore->read($subjectPath)['retry_after']);
+
+            $collectionPath = $cacheStore->dataPath('watching-anime.php');
+            $cacheStore->write($collectionPath, array(
+                'time' => 900,
+                'data_variant' => COLLECTION_VARIANT,
+                'limit' => 2,
+                'user_key' => hash('sha256', 'tester'),
+                'cate' => 'anime',
+                'data' => array_slice(json_decode(fixture('collection-items.json'), true), 0, 2)
+            ));
+            $collection = collectionService($pluginConfig, $http, $cacheStore, $cover);
+            $page = json_decode($collection->update('tester', 'watching', 'anime', 2, 0, 60), true);
+            assertSameValue(array(101, 102), array_column($page['items'], 'id'));
+            assertSameValue(1030, $cacheStore->read($collectionPath)['retry_after']);
+
+            $calendarPath = $cacheStore->dataPath('calendar.php');
+            $cacheStore->write($calendarPath, array(
+                'time' => 900,
+                'image_variant' => CALENDAR_VARIANT,
+                'data' => array(array(
+                    'id' => 1,
+                    'date_en' => 'Mon',
+                    'date_cn' => 'Monday',
+                    'items' => array(array(
+                        'id' => 101,
+                        'name' => 'First',
+                        'name_cn' => 'First CN',
+                        'url' => 'https://bgm.tv/subject/101',
+                        'images' => array('large' => 'https://lain.bgm.tv/pic/cover/l/test-101.jpg')
+                    ))
+                ))
+            ));
+            $calendar = new CalendarService(
+                $pluginConfig,
+                $http,
+                $cacheStore,
+                $cover,
+                $collection,
+                CALENDAR_VARIANT
+            );
+            $days = json_decode($calendar->update('tester', 'all', 60), true);
+            assertSameValue(array(101), array_column($days[0]['items'], 'id'));
+            assertSameValue(1030, $cacheStore->read($calendarPath)['retry_after']);
+            assertSameValue(3, $http->calls);
         } finally {
             removeTestDirectory($directory);
         }

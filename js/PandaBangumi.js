@@ -40,6 +40,51 @@ function createAbortError() {
 }
 
 /**
+ * 等待重试，同时响应 PJAX 请求取消。
+ * @param {number} milliseconds
+ * @param {AbortSignal} [signal]
+ * @returns {Promise<void>}
+ */
+function waitForRetry(milliseconds, signal) {
+    const delay = Math.max(0, Math.floor(Number(milliseconds) || 0));
+    if (signal && signal.aborted) return Promise.reject(createAbortError());
+    if (delay === 0) return Promise.resolve();
+
+    return new Promise((resolve, reject) => {
+        const onAbort = () => {
+            clearTimeout(timer);
+            reject(createAbortError());
+        };
+        const timer = setTimeout(() => {
+            if (signal) signal.removeEventListener('abort', onAbort);
+            resolve();
+        }, delay);
+        if (signal) signal.addEventListener('abort', onAbort, { once: true });
+    });
+}
+
+/**
+ * 将 Retry-After 规范为有上限的毫秒延迟。
+ * @param {Response} response
+ * @param {number} retryNumber
+ * @returns {number}
+ */
+function retryAfterMilliseconds(response, retryNumber) {
+    const raw = response && response.headers && typeof response.headers.get === 'function'
+        ? String(response.headers.get('Retry-After') || '').trim()
+        : '';
+    let seconds = raw === '' ? NaN : Number(raw);
+    if (!Number.isFinite(seconds) || seconds < 0) {
+        const date = raw ? Date.parse(raw) : NaN;
+        seconds = Number.isFinite(date)
+            ? Math.max(0, (date - Date.now()) / 1000)
+            : Math.pow(2, Math.max(0, retryNumber - 1));
+    }
+    seconds = Math.max(0, Math.min(5, seconds));
+    return Math.ceil(seconds * 1000) + (seconds > 0 ? Math.floor(Math.random() * 251) : 0);
+}
+
+/**
  * 创建有界异步任务队列。
  * @param {number} limit
  * @returns {{enqueue: Function, cancelPending: Function, stats: Function}}
@@ -161,7 +206,7 @@ function isLocalPandaBangumiUrl(value) {
  * @param {AbortSignal} signal
  * @returns {Promise<void>}
  */
-function loadImageResource(image, url, signal) {
+async function loadImageResource(image, url, signal) {
     const load = () => new Promise((resolve, reject) => {
         const cleanup = () => {
             image.onload = null;
@@ -189,9 +234,18 @@ function loadImageResource(image, url, signal) {
         image.src = url;
     });
 
-    return isLocalPandaBangumiUrl(url)
-        ? PandaBangumiRuntime.requestQueue.enqueue(load, signal)
-        : load();
+    const isLocal = isLocalPandaBangumiUrl(url);
+    const attempts = isLocal ? 2 : 1;
+    for (let attempt = 0; attempt < attempts; attempt++) {
+        try {
+            await (isLocal ? PandaBangumiRuntime.requestQueue.enqueue(load, signal) : load());
+            return;
+        } catch (error) {
+            if (isAbortError(error) || attempt + 1 >= attempts) throw error;
+            image.removeAttribute('src');
+            await waitForRetry(1000 + Math.floor(Math.random() * 251), signal);
+        }
+    }
 }
 
 /**
@@ -513,6 +567,31 @@ function waitForStableLayout() {
 }
 
 /**
+ * 仅在星期标签容器内横向居中指定标签，避免带动页面纵向滚动。
+ * @param {HTMLElement} tabs
+ * @param {HTMLElement} tab
+ */
+function centerCalendarTab(tabs, tab) {
+    if (!tabs || !tab) return;
+
+    const maxScrollLeft = Math.max(0, tabs.scrollWidth - tabs.clientWidth);
+    if (maxScrollLeft === 0) return;
+
+    const tabsRect = tabs.getBoundingClientRect();
+    const tabRect = tab.getBoundingClientRect();
+    const centeredLeft = tabs.scrollLeft
+        + tabRect.left - tabsRect.left
+        - (tabs.clientWidth - tabRect.width) / 2;
+    const targetLeft = Math.max(0, Math.min(maxScrollLeft, centeredLeft));
+
+    if (typeof tabs.scrollTo === 'function') {
+        tabs.scrollTo({ left: targetLeft, behavior: 'smooth' });
+    } else {
+        tabs.scrollLeft = targetLeft;
+    }
+}
+
+/**
  * 设置移动端星期选择器的展开状态
  * @param {HTMLElement} picker
  * @param {boolean} expanded
@@ -534,13 +613,25 @@ function setWeekPickerExpanded(picker, expanded) {
  * @returns {Promise<any>}
  */
 async function fetchJson(url, signal) {
-    return PandaBangumiRuntime.requestQueue.enqueue(async () => {
-        const response = await fetch(url, { signal });
-        if (!response.ok) {
-            throw new Error(`HTTP ${response.status}`);
+    const maxRetries = 2;
+    for (let retryNumber = 0; retryNumber <= maxRetries; retryNumber++) {
+        const response = await PandaBangumiRuntime.requestQueue.enqueue(
+            () => fetch(url, { signal }),
+            signal
+        );
+        if (response.ok) {
+            return response.json();
         }
-        return response.json();
-    }, signal);
+
+        if (response.status !== 429 || retryNumber >= maxRetries) {
+            const error = new Error(`HTTP ${response.status}`);
+            error.status = response.status;
+            throw error;
+        }
+        await waitForRetry(retryAfterMilliseconds(response, retryNumber + 1), signal);
+    }
+
+    throw new Error('HTTP request retry exhausted');
 }
 
 /**
@@ -902,7 +993,7 @@ async function loadCalendar(calContainer) {
         loadCalendarPanelImages(panels.querySelector('.cal-panel.active'));
 
         if (activeTab && !window.matchMedia('(max-width: 480px)').matches) {
-            activeTab.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' });
+            centerCalendarTab(tabs, activeTab);
         }
 
         weekTrigger.addEventListener('click', () => {

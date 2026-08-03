@@ -154,12 +154,12 @@ final class CacheStore
         return (int)($cache['retry_after'] ?? 0) > $this->now();
     }
 
-    public function deferRefresh(string $filePath, array $cache): array
+    public function deferRefresh(string $filePath, array $cache, int $retryAfter = self::FAILURE_RETRY): array
     {
         if (!isset($cache['time'])) {
             $cache['time'] = 1;
         }
-        $cache['retry_after'] = $this->now() + self::FAILURE_RETRY;
+        $cache['retry_after'] = $this->now() + max(1, $retryAfter);
         $this->write($filePath, $cache);
         return $cache;
     }
@@ -196,6 +196,26 @@ final class CacheStore
             return false;
         }
         return $lockHandle;
+    }
+
+    /** @return resource|false */
+    public function acquireShardLockWithWait(string $scope, string $key, int $waitMilliseconds)
+    {
+        $waitMilliseconds = max(0, min(1000, $waitMilliseconds));
+        $deadline = hrtime(true) + ($waitMilliseconds * 1000000);
+
+        do {
+            $lockHandle = $this->acquireShardLock($scope, $key);
+            if ($lockHandle !== false) {
+                return $lockHandle;
+            }
+            if (hrtime(true) >= $deadline) {
+                break;
+            }
+            usleep(10000);
+        } while (true);
+
+        return false;
     }
 
     /** @return resource|false */
