@@ -1,0 +1,5 @@
+[
+  {"id": 101, "name": "First", "images": {"large": "https://lain.bgm.tv/pic/cover/l/test-101.jpg"}},
+  {"id": 102, "name": "Second", "images": {"large": "https://lain.bgm.tv/pic/cover/l/test-102.jpg"}},
+  {"id": 103, "name": "Third", "images": {"large": "https://lain.bgm.tv/pic/cover/l/test-103.jpg"}}
+]
