@@ -1,0 +1,10 @@
+{
+  "id": 101,
+  "name": "First",
+  "name_cn": "First CN",
+  "type": 2,
+  "images": {
+    "small": "https://lain.bgm.tv/pic/cover/s/test-101.jpg",
+    "large": "https://lain.bgm.tv/pic/cover/l/test-101.jpg"
+  }
+}

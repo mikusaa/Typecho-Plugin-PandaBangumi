@@ -105,3 +105,11 @@ PHP 测试不访问真实 Bangumi API，也不写入插件缓存目录：
 ```bash
 php tests/run.php
 ```
+
+Typecho 直接加载的入口文件保留在插件根目录；内部 PHP 模块统一放在 `src/`：
+
+- `PluginConfig.php`：插件配置读取与规范化。
+- `HttpClient.php`、`HttpTransport.php`：Bangumi JSON 请求及可替换传输接口。
+- `CacheStore.php`：文件缓存、原子写入、刷新锁和失败退避。
+- `CoverService.php`：封面校验、下载、缓存响应和清理。
+- `CollectionService.php`、`CalendarService.php`、`SubjectService.php`：各类数据刷新与输出。

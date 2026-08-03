@@ -1,0 +1,9 @@
+[
+  {
+    "weekday": {"id": 1, "en": "Mon", "cn": "Monday"},
+    "items": [
+      {"id": 101, "name": "First", "name_cn": "First CN", "images": {"large": "https://lain.bgm.tv/pic/cover/l/test-101.jpg"}},
+      {"id": 999, "name": "Other", "name_cn": "Other CN", "images": {"large": "https://lain.bgm.tv/pic/cover/l/test-999.jpg"}}
+    ]
+  }
+]

@@ -1,0 +1,35 @@
+{
+  "total": 2,
+  "limit": 30,
+  "offset": 0,
+  "data": [
+    {
+      "ep_status": 4,
+      "vol_status": 0,
+      "subject": {
+        "id": 101,
+        "name": "First",
+        "name_cn": "First CN",
+        "eps": 12,
+        "volumes": 0,
+        "date": "2026-01-01",
+        "score": 7.5,
+        "images": {"large": "https://lain.bgm.tv/pic/cover/l/test-101.jpg"}
+      }
+    },
+    {
+      "ep_status": 2,
+      "vol_status": 0,
+      "subject": {
+        "id": 102,
+        "name": "Second",
+        "name_cn": "Second CN",
+        "eps": 10,
+        "volumes": 0,
+        "date": "2026-02-01",
+        "score": 8.0,
+        "images": {"large": "https://lain.bgm.tv/pic/cover/l/test-102.jpg"}
+      }
+    }
+  ]
+}
