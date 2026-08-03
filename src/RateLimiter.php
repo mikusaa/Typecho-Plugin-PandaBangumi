@@ -8,14 +8,14 @@ final class RateLimiter
     {
     }
 
-    public function consumeSubject(): void
+    public function consumeApi(): void
     {
-        $this->consume('subject', 60, 1.0);
+        $this->consume('api', 20, 1.0);
     }
 
     public function consumeCover(): void
     {
-        $this->consume('cover', 120, 2.0);
+        $this->consume('cover', 32, 2.0);
     }
 
     public function consume(string $bucket, int $capacity, float $refillPerSecond): void

@@ -10,8 +10,7 @@ final class SubjectService
         private PluginConfig $config,
         private HttpTransport $http,
         private CacheStore $cacheStore,
-        private CoverService $coverService,
-        private RateLimiter $rateLimiter
+        private CoverService $coverService
     ) {
     }
 
@@ -63,7 +62,6 @@ final class SubjectService
                     $stored = $this->cacheStore->read($filePath);
                     $cache = $this->cacheStore->usable($filePath, $validTimeSpan, $stored, $isCompatible);
                     if ($cache === null) {
-                        $this->rateLimiter->consumeSubject();
                         $json = $this->http->get($this->config->buildApiUrl('/v0/subjects/' . $subjectId));
                         $data = $json !== false ? json_decode($json, true) : null;
                         if (is_array($data) && (int)($data['id'] ?? 0) === $subjectId) {
@@ -80,7 +78,6 @@ final class SubjectService
                                 ? $stored
                                 : array('time' => 1, 'subject_id' => $subjectId, 'data' => array());
                             $cache = $this->cacheStore->deferRefresh($filePath, $fallback);
-                            $this->cacheStore->pruneSubjectCaches($subjectId);
                         }
                     }
                 } finally {
@@ -94,6 +91,8 @@ final class SubjectService
         if (!is_array($data) || (int)($data['id'] ?? 0) !== $subjectId) {
             return $this->encode(array());
         }
+
+        $this->coverService->maybeRunMaintenance();
 
         $images = $this->coverService->extractImages($data['images'] ?? array());
         $cover = $this->coverService->describeSource($this->coverService->selectUrl($images));

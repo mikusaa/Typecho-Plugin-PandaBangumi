@@ -128,7 +128,10 @@ final class CollectionService
 
         $lockHandle = $this->cacheStore->acquireRefreshLock($filePath);
         if ($lockHandle === false) {
-            return $isCompatible($stored) ? $stored : self::EMPTY_CACHE;
+            if ($isCompatible($stored)) {
+                return $stored;
+            }
+            throw new RateLimitExceeded(1);
         }
 
         try {
@@ -154,8 +157,6 @@ final class CollectionService
             }
 
             $this->cacheStore->write($filePath, $newCache);
-            $calendar = $this->cacheStore->read($this->cacheStore->dataPath('calendar.php'));
-            $this->coverService->cleanup($calendar['data'] ?? array());
             return $newCache;
         } finally {
             $this->cacheStore->releaseRefreshLock($lockHandle);
@@ -196,6 +197,7 @@ final class CollectionService
     ): string {
         $status = ($this->listTypes[$category][1] ?? '') === $type ? 2 : 3;
         $cache = $this->categoryCache($userId, $status, $type, $category, $validTimeSpan);
+        $this->coverService->maybeRunMaintenance();
         $page = $this->page(
             $cache['data'],
             $pageSize,

@@ -9,6 +9,10 @@ PandaBangumiRuntime.coverObserver = PandaBangumiRuntime.coverObserver || null;
 PandaBangumiRuntime.coverLoads = PandaBangumiRuntime.coverLoads || new Map();
 PandaBangumiRuntime.musicObiColors = PandaBangumiRuntime.musicObiColors || new Map();
 PandaBangumiRuntime.coverPreloadMargin = 0;
+PandaBangumiRuntime.requestQueue = PandaBangumiRuntime.requestQueue
+    && typeof PandaBangumiRuntime.requestQueue.enqueue === 'function'
+    ? PandaBangumiRuntime.requestQueue
+    : createRequestQueue(2);
 window.PandaBangumi = PandaBangumiRuntime;
 
 if (!PandaBangumiRuntime.consoleLogged) {
@@ -27,6 +31,81 @@ if (!PandaBangumiRuntime.consoleLogged) {
  */
 function isAbortError(error) {
     return error && error.name === 'AbortError';
+}
+
+function createAbortError() {
+    const error = new Error('The operation was aborted');
+    error.name = 'AbortError';
+    return error;
+}
+
+/**
+ * 创建有界异步任务队列。
+ * @param {number} limit
+ * @returns {{enqueue: Function, cancelPending: Function, stats: Function}}
+ */
+function createRequestQueue(limit) {
+    const concurrency = Math.max(1, Math.floor(Number(limit) || 1));
+    const waiting = [];
+    let active = 0;
+
+    const drain = () => {
+        while (active < concurrency && waiting.length > 0) {
+            const item = waiting.shift();
+            if (item.cancelled) continue;
+
+            item.started = true;
+            active++;
+            Promise.resolve()
+                .then(item.task)
+                .then(item.resolve, item.reject)
+                .finally(() => {
+                    active--;
+                    if (item.signal) item.signal.removeEventListener('abort', item.onAbort);
+                    drain();
+                });
+        }
+    };
+
+    return {
+        enqueue(task, signal) {
+            return new Promise((resolve, reject) => {
+                if (signal && signal.aborted) {
+                    reject(createAbortError());
+                    return;
+                }
+
+                const item = {
+                    task,
+                    signal,
+                    resolve,
+                    reject,
+                    started: false,
+                    cancelled: false,
+                    onAbort: null
+                };
+                item.onAbort = () => {
+                    if (item.started || item.cancelled) return;
+                    item.cancelled = true;
+                    reject(createAbortError());
+                };
+                if (signal) signal.addEventListener('abort', item.onAbort, { once: true });
+                waiting.push(item);
+                drain();
+            });
+        },
+        cancelPending() {
+            waiting.splice(0).forEach(item => {
+                if (item.cancelled) return;
+                item.cancelled = true;
+                if (item.signal) item.signal.removeEventListener('abort', item.onAbort);
+                item.reject(createAbortError());
+            });
+        },
+        stats() {
+            return { active, waiting: waiting.filter(item => !item.cancelled).length };
+        }
+    };
 }
 
 /**
@@ -53,7 +132,66 @@ function removeRequestController(controller) {
 function abortPendingRequests() {
     PandaBangumiRuntime.controllers.forEach(controller => controller.abort());
     PandaBangumiRuntime.controllers.clear();
+    PandaBangumiRuntime.requestQueue.cancelPending();
     disconnectCoverLoading();
+}
+
+/**
+ * 判断 URL 是否为本站 PandaBangumi 路由。
+ * @param {string} value
+ * @returns {boolean}
+ */
+function isLocalPandaBangumiUrl(value) {
+    if (!window.location || !window.bgmBase) return false;
+    try {
+        const url = new URL(value, window.location.href);
+        const base = new URL(String(window.bgmBase), window.location.href);
+        return url.origin === window.location.origin
+            && url.origin === base.origin
+            && url.pathname === base.pathname;
+    } catch (error) {
+        return false;
+    }
+}
+
+/**
+ * 加载图片资源，本站缓存封面进入共享队列。
+ * @param {HTMLImageElement} image
+ * @param {string} url
+ * @param {AbortSignal} signal
+ * @returns {Promise<void>}
+ */
+function loadImageResource(image, url, signal) {
+    const load = () => new Promise((resolve, reject) => {
+        const cleanup = () => {
+            image.onload = null;
+            image.onerror = null;
+            signal.removeEventListener('abort', onAbort);
+        };
+        const onAbort = () => {
+            cleanup();
+            image.removeAttribute('src');
+            reject(createAbortError());
+        };
+        image.onload = () => {
+            cleanup();
+            resolve();
+        };
+        image.onerror = () => {
+            cleanup();
+            reject(new Error('封面加载失败'));
+        };
+        signal.addEventListener('abort', onAbort, { once: true });
+        if (signal.aborted) {
+            onAbort();
+            return;
+        }
+        image.src = url;
+    });
+
+    return isLocalPandaBangumiUrl(url)
+        ? PandaBangumiRuntime.requestQueue.enqueue(load, signal)
+        : load();
 }
 
 /**
@@ -201,9 +339,11 @@ function buildSubjectCoverUrl(data, subjectId) {
  * @param {'loaded'|'error'} state
  */
 function finishPosterCoverLoad(card, image, state) {
-    if (PandaBangumiRuntime.coverLoads.get(card) !== image) return;
+    const record = PandaBangumiRuntime.coverLoads.get(card);
+    if (!record || record.image !== image) return;
 
     PandaBangumiRuntime.coverLoads.delete(card);
+    removeRequestController(record.controller);
     card.classList.remove('is-cover-pending', 'is-cover-loading');
     card.classList.add(state === 'loaded' ? 'is-cover-loaded' : 'is-cover-error');
     card.dataset.coverState = state;
@@ -237,9 +377,19 @@ function loadPosterCover(card) {
 
     const image = new Image();
     image.decoding = 'async';
-    image.onload = () => {
+    const controller = createRequestController();
+    const record = { image, controller };
+    PandaBangumiRuntime.coverLoads.set(card, record);
+    loadImageResource(image, imageUrl, controller.signal).then(() => {
         const applyCover = () => {
-            if (!card.isConnected || PandaBangumiRuntime.coverLoads.get(card) !== image) return;
+            if (!card.isConnected) {
+                if (PandaBangumiRuntime.coverLoads.get(card) === record) {
+                    PandaBangumiRuntime.coverLoads.delete(card);
+                    removeRequestController(controller);
+                }
+                return;
+            }
+            if (PandaBangumiRuntime.coverLoads.get(card) !== record) return;
             cover.style.backgroundImage = `url("${imageUrl}")`;
             finishPosterCoverLoad(card, image, 'loaded');
         };
@@ -249,10 +399,16 @@ function loadPosterCover(card) {
         } else {
             applyCover();
         }
-    };
-    image.onerror = () => finishPosterCoverLoad(card, image, 'error');
-    PandaBangumiRuntime.coverLoads.set(card, image);
-    image.src = imageUrl;
+    }).catch(error => {
+        if (isAbortError(error)) {
+            if (PandaBangumiRuntime.coverLoads.get(card) === record) {
+                PandaBangumiRuntime.coverLoads.delete(card);
+                removeRequestController(controller);
+            }
+            return;
+        }
+        finishPosterCoverLoad(card, image, 'error');
+    });
 }
 
 /**
@@ -318,10 +474,11 @@ function disconnectCoverLoading() {
         PandaBangumiRuntime.coverObserver = null;
     }
 
-    PandaBangumiRuntime.coverLoads.forEach((image, card) => {
-        image.onload = null;
-        image.onerror = null;
-        image.removeAttribute('src');
+    PandaBangumiRuntime.coverLoads.forEach((record, card) => {
+        record.controller.abort();
+        record.image.onload = null;
+        record.image.onerror = null;
+        record.image.removeAttribute('src');
         if (card.isConnected && card.dataset.coverUrl) {
             card.dataset.coverState = 'pending';
             card.classList.remove('is-cover-loading');
@@ -377,11 +534,13 @@ function setWeekPickerExpanded(picker, expanded) {
  * @returns {Promise<any>}
  */
 async function fetchJson(url, signal) {
-    const response = await fetch(url, { signal });
-    if (!response.ok) {
-        throw new Error(`HTTP ${response.status}`);
-    }
-    return response.json();
+    return PandaBangumiRuntime.requestQueue.enqueue(async () => {
+        const response = await fetch(url, { signal });
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}`);
+        }
+        return response.json();
+    }, signal);
 }
 
 /**
@@ -1235,20 +1394,20 @@ function buildCardElement(data, subjectId) {
     const img = document.createElement('img');
     img.className = 'bgm-subject-card__image';
     img.alt = `${cardData.title} 封面`;
-    img.loading = 'lazy';
+    img.loading = isLocalPandaBangumiUrl(cardData.posterUrl) ? 'eager' : 'lazy';
     img.decoding = 'async';
     if (cardData.posterUrl) {
         poster.classList.add('is-cover-loading');
-        img.addEventListener('load', () => {
+        const controller = createRequestController();
+        loadImageResource(img, cardData.posterUrl, controller.signal).then(() => {
             poster.classList.remove('is-cover-loading', 'is-cover-error');
             poster.classList.add('is-cover-loaded');
             if (isMusic) applyMusicObiColor(wrapper, img, cardData.posterUrl);
-        }, { once: true });
-        img.addEventListener('error', () => {
+        }).catch(error => {
+            if (isAbortError(error)) return;
             poster.classList.remove('is-cover-loading', 'is-cover-loaded');
             poster.classList.add('is-cover-error');
-        }, { once: true });
-        img.src = cardData.posterUrl;
+        }).finally(() => removeRequestController(controller));
     } else {
         poster.classList.add('is-cover-error');
     }

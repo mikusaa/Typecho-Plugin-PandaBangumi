@@ -29,6 +29,8 @@ const sandbox = {
 
 vm.createContext(sandbox);
 vm.runInContext(source, sandbox, { filename: 'PandaBangumi.js' });
+assert.equal(typeof sandbox.window.PandaBangumi.init, 'function');
+assert.equal(typeof sandbox.window.PandaBangumi.requestQueue.enqueue, 'function');
 const normalize = vm.runInContext('normalizeSubjectCardData', sandbox);
 const normalizeCollection = vm.runInContext('normalizeCollectionType', sandbox);
 const isCompletedCollection = vm.runInContext('isCompletedCollectionType', sandbox);
@@ -36,6 +38,9 @@ const shouldShowProgress = vm.runInContext('shouldShowPosterProgress', sandbox);
 const pickMusicObiColor = vm.runInContext('pickMusicObiColor', sandbox);
 const hslToRgb = vm.runInContext('hslToRgb', sandbox);
 const relativeLuminance = vm.runInContext('relativeLuminance', sandbox);
+const createRequestQueue = vm.runInContext('createRequestQueue', sandbox);
+const abortPendingRequests = vm.runInContext('abortPendingRequests', sandbox);
+const createRequestController = vm.runInContext('createRequestController', sandbox);
 
 function normalized(name) {
     const fixture = fixtures[name];
@@ -134,4 +139,54 @@ assert.equal(shouldShowProgress('watching', 'anime', true), true);
 assert.equal(shouldShowProgress('watched', 'anime', true), false);
 assert.equal(shouldShowProgress('playing', 'game', true), false);
 
-process.stdout.write('7 subject card fixtures, 10 collection type mappings, 4 progress cases, and 3 palette checks passed\n');
+async function testRequestQueue() {
+    const queue = createRequestQueue(2);
+    const started = [];
+    const releases = {};
+    const task = name => queue.enqueue(() => new Promise(resolve => {
+        started.push(name);
+        releases[name] = resolve;
+    }));
+
+    const first = task('first');
+    const second = task('second');
+    const third = task('third');
+    await Promise.resolve();
+    assert.deepEqual(started, ['first', 'second']);
+    assert.deepEqual(JSON.parse(JSON.stringify(queue.stats())), { active: 2, waiting: 1 });
+    releases.first();
+    await first;
+    await Promise.resolve();
+    await Promise.resolve();
+    assert.deepEqual(started, ['first', 'second', 'third']);
+    releases.second();
+    releases.third();
+    await Promise.all([second, third]);
+    assert.deepEqual(JSON.parse(JSON.stringify(queue.stats())), { active: 0, waiting: 0 });
+
+    const pjaxQueue = createRequestQueue(1);
+    sandbox.window.PandaBangumi.requestQueue = pjaxQueue;
+    const activeController = createRequestController();
+    const waitingController = createRequestController();
+    const active = pjaxQueue.enqueue(() => new Promise((resolve, reject) => {
+        activeController.signal.addEventListener('abort', () => {
+            const error = new Error('aborted');
+            error.name = 'AbortError';
+            reject(error);
+        }, { once: true });
+    }), activeController.signal);
+    const waiting = pjaxQueue.enqueue(() => Promise.resolve(), waitingController.signal);
+    await Promise.resolve();
+    abortPendingRequests();
+    await assert.rejects(active, error => error.name === 'AbortError');
+    await assert.rejects(waiting, error => error.name === 'AbortError');
+    await Promise.resolve();
+    assert.deepEqual(JSON.parse(JSON.stringify(pjaxQueue.stats())), { active: 0, waiting: 0 });
+}
+
+testRequestQueue().then(() => {
+    process.stdout.write('7 subject card fixtures, 10 collection type mappings, 4 progress cases, 3 palette checks, and request queue checks passed\n');
+}).catch(error => {
+    console.error(error);
+    process.exitCode = 1;
+});

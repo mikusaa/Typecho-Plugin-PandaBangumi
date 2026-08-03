@@ -23,6 +23,22 @@ class Action extends Contents implements ActionInterface
     private const COLLECTION_FIRST_PAGE_SIZE = 11;
     private const COLLECTION_PAGE_SIZE = 12;
 
+    private static function queryString(string $name, string $default = ''): ?string
+    {
+        $value = $_GET[$name] ?? $default;
+        return is_scalar($value) ? (string)$value : null;
+    }
+
+    private static function hasInvalidQuery(array $names): bool
+    {
+        foreach ($names as $name) {
+            if (array_key_exists($name, $_GET) && !is_scalar($_GET[$name])) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     /**
      * 使用弱比较规则匹配 If-None-Match 中的实体标签
      */
@@ -53,6 +69,7 @@ class Action extends Contents implements ActionInterface
         )) : '';
         if (defined('PANDABANGUMI_TESTING') && PANDABANGUMI_TESTING === true) {
             http_response_code(429);
+            header('Retry-After: ' . $retryAfter);
             echo $body;
             return;
         }
@@ -63,10 +80,14 @@ class Action extends Contents implements ActionInterface
                 && str_contains($message, 'Undefined array key 429')
                 && basename($file) === 'Response.php';
         });
-        $this->response->setStatus(429);
-        $this->response->setHeader('Retry-After', $retryAfter);
-        $this->response->setHeader('Content-Length', (string)strlen($body));
-        $this->response->throwContent($body, $withJson ? 'application/json' : 'text/plain');
+        try {
+            $this->response->setStatus(429);
+            $this->response->setHeader('Retry-After', $retryAfter);
+            $this->response->setHeader('Content-Length', (string)strlen($body));
+            $this->response->throwContent($body, $withJson ? 'application/json' : 'text/plain');
+        } finally {
+            restore_error_handler();
+        }
     }
 
     /**
@@ -75,7 +96,13 @@ class Action extends Contents implements ActionInterface
      */
     public function action(): void
     {
-        $type = strtolower((string)($_GET['type'] ?? ''));
+        $typeValue = self::queryString('type');
+        if ($typeValue === null) {
+            header("Content-Type: application/json; charset=UTF-8");
+            echo BangumiAPI::encodeJson(array());
+            return;
+        }
+        $type = strtolower($typeValue);
         $isCollection = BangumiAPI::isCollectionType($type);
         if (!$isCollection && !in_array($type, ['calendar', 'subject', 'cover'], true)) {
             header("Content-Type: application/json; charset=UTF-8");
@@ -86,20 +113,25 @@ class Action extends Contents implements ActionInterface
         $options = Helper::options();
         $pluginOptions = $options->plugin('PandaBangumi');
         $ID = trim((string)($pluginOptions->ID ?? ''));
-        $ValidTimeSpan = max(0, (int)($pluginOptions->ValidTimeSpan ?? 86400));
-        $From = (int)($_GET['from'] ?? 0);
+        $ValidTimeSpan = PluginConfig::normalizeRefreshInterval($pluginOptions->ValidTimeSpan ?? 86400);
+        $fromValue = self::queryString('from', '0');
+        $From = $fromValue === null ? 0 : (int)$fromValue;
 
         if ($type === 'cover') {
-            $subjectId = (int)($_GET['id'] ?? 0);
-            $version = strtolower((string)($_GET['v'] ?? ''));
-            $scope = strtolower((string)($_GET['scope'] ?? 'calendar'));
+            if (self::hasInvalidQuery(array('id', 'v', 'scope', 'list', 'cate'))) {
+                $this->response->setStatus(404);
+                return;
+            }
+            $subjectId = (int)(self::queryString('id', '0') ?? '0');
+            $version = strtolower(self::queryString('v') ?? '');
+            $scope = strtolower(self::queryString('scope', 'calendar') ?? 'calendar');
             try {
                 if ($scope === 'collection') {
                     $cover = BangumiAPI::getCollectionCover(
                         $subjectId,
                         $version,
-                        strtolower((string)($_GET['list'] ?? '')),
-                        strtolower((string)($_GET['cate'] ?? ''))
+                        strtolower(self::queryString('list') ?? ''),
+                        strtolower(self::queryString('cate') ?? '')
                     );
                 } elseif ($scope === 'subject') {
                     $cover = BangumiAPI::getSubjectCover($subjectId, $version);
@@ -154,9 +186,17 @@ class Action extends Contents implements ActionInterface
 
         header("Content-Type: application/json; charset=UTF-8");
 
+        $queryKeys = $type === 'subject'
+            ? array('id')
+            : ($type === 'calendar' ? array('filter') : array('from', 'cate'));
+        if (self::hasInvalidQuery($queryKeys)) {
+            echo BangumiAPI::encodeJson(array());
+            return;
+        }
+
         if ($type === 'subject') {
             try {
-                echo BangumiAPI::updateSubjectCacheAndReturn((int)($_GET['id'] ?? 0), $ValidTimeSpan);
+                echo BangumiAPI::updateSubjectCacheAndReturn((int)(self::queryString('id', '0') ?? '0'), $ValidTimeSpan);
             } catch (RateLimitExceeded $error) {
                 $this->sendRateLimitResponse($error, true);
             }
@@ -164,9 +204,14 @@ class Action extends Contents implements ActionInterface
         }
 
         $pageSize = $From <= 0 ? self::COLLECTION_FIRST_PAGE_SIZE : self::COLLECTION_PAGE_SIZE;
-        if ($isCollection)
-            echo BangumiAPI::updateCollectionCacheAndReturn($ID, $pageSize, $From, $ValidTimeSpan);
-        elseif ($type == 'calendar')
-            echo BangumiAPI::updateCalendarCacheAndReturn($ID, $ValidTimeSpan);
+        try {
+            if ($isCollection) {
+                echo BangumiAPI::updateCollectionCacheAndReturn($ID, $pageSize, $From, $ValidTimeSpan);
+            } elseif ($type === 'calendar') {
+                echo BangumiAPI::updateCalendarCacheAndReturn($ID, $ValidTimeSpan);
+            }
+        } catch (RateLimitExceeded $error) {
+            $this->sendRateLimitResponse($error, true);
+        }
     }
 }

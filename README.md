@@ -4,13 +4,19 @@
 
 介绍：**[PandaBangumi 插件介绍与使用说明](https://www.himiku.com/archives/pandabangumi.html)**
 
+## 安装与升级
+
+> **3.0.6 开发版不能覆盖旧版本升级。** 旧版用户必须先停用插件，删除服务器上整个 `usr/plugins/PandaBangumi` 文件夹，再上传并启用新的 `PandaBangumi` 文件夹。直接覆盖会遗留可公开访问的旧 `cache/`，属于不受支持的升级方式。
+
+全新安装时，将下载的文件夹改名为 `PandaBangumi`，上传到服务器 `usr/plugins` 目录后在 Typecho 后台启用。插件只会创建和维护新的 `插件目录/.cache/`，不会检查、迁移或删除相邻的旧 `cache/`、`json/` 及其中的数据。
+
 ## 使用
 
 插件版添加了**分页功能**，这样收藏很多时能节约流量，加快速度。收藏列表、追番日历和单部 Subject 条目卡片均按需插入对应的 HTML 标记，不需要在插件设置中单独开关。
 
-使用方法：去 GitHub 上下载插件：[mikusaa/Typecho-Plugin-PandaBangumi](https://github.com/mikusaa/Typecho-Plugin-PandaBangumi)
+下载地址：[mikusaa/Typecho-Plugin-PandaBangumi](https://github.com/mikusaa/Typecho-Plugin-PandaBangumi)
 
-解压后把文件夹改名为 `PandaBangumi` ，上传到服务器 `usr/plugins` 目录下，在 Typecho 后台启用本插件，填写 ID（即用户主页链接后的那串数字）。收藏列表首批展示最多 11 部，并在网格末尾保留一张操作卡；后续每批加载最多 12 部。缓存内容耗尽或达到配置上限后，操作卡会变为“在 Bangumi 查看更多”。
+启用插件后填写 ID（即用户主页链接后的那串数字）。收藏列表首批展示最多 11 部，并在网格末尾保留一张操作卡；后续每批加载最多 12 部。缓存内容耗尽或达到配置上限后，操作卡会变为“在 Bangumi 查看更多”。
 
 `收藏列表数量上限` 同时作用于各分类的在看和已看列表，每类可设置为 `0–300` 条。插件会严格按该值截断本站列表；达到上限后仍可通过操作卡前往对应的 Bangumi 收藏页。
 
@@ -18,7 +24,9 @@
 
 插件统一选择 API 响应中的 `images.large` 作为封面，不根据图片 URL 猜测或替换尺寸。日历、收藏列表和单部 Subject 条目卡片共用 `封面加载方式`：默认的“直接加载”会原样使用 API 返回的图片地址；如果 API 镜像使用自己的图片反代或独立 CDN，应由镜像改写响应 JSON 中的各尺寸图片地址，并保证返回的图片可以被访客浏览器访问。HTTPS 页面直接加载 HTTP 图片时，浏览器可能会按混合内容拦截。
 
-选择“缓存到本站后加载”时，服务器会下载 API 返回的 `large` 封面并保存到 `插件目录/cache/covers/`，访客只请求本站地址，不会看到图片来源域名。缓存模式保留严格懒加载和长期浏览器缓存；下载失败时显示缺图，不会回退到外部图片。为避免服务端请求被滥用，缓存只接受公网 HTTPS 图片地址；Bangumi 官方日历中的 `http://lain.bgm.tv` 地址会仅在服务器下载时升级为 HTTPS。冷 Subject 刷新和冷封面下载使用独立的全局限流，超过阈值时接口会返回 `429` 和 `Retry-After`，已有缓存不受影响。
+选择“缓存到本站后加载”时，服务器会下载 API 返回的 `large` 封面并保存到 `插件目录/.cache/covers/`，访客只请求本站地址，不会看到图片来源域名。收藏和日历封面按视口加载，并使用长期浏览器缓存；下载失败时显示缺图，不会回退到外部图片。缓存只接受公网 HTTPS 图片地址；Bangumi 官方日历中的 `http://lain.bgm.tv` 地址会仅在服务器下载时升级为 HTTPS。
+
+本站接口和本站缓存封面在浏览器内共享最多 2 个并发请求。服务器端 Subject、日历和收藏的每一页 Bangumi JSON 请求共用容量 20、每秒恢复 1 的令牌桶；封面下载使用容量 32、每秒恢复 2 的令牌桶，所有真实外部请求再共享最多 2 个并发槽。冷请求超限时 Subject、日历、收藏和封面接口均可能返回 `429` 与整数秒 `Retry-After`；已有缓存不计费，前端不会自动重试。
 
 在任何页面，不论是独立页还是一般的文章页面，在文章里插入代码：
 
@@ -94,7 +102,7 @@ Bangumi 单部 Subject 条目卡片（正式适配动画、书籍、游戏、三
 
 保存发布，这个位置就会展开成追番展示面板。加载和分页都使用 AJAX 请求～
 
-插件带了缓存功能，可以极大地提升速度，**但是记得要保证 `插件目录/cache/` 这个目录可写**。
+插件带了缓存功能，可以极大地提升速度，**但是记得要保证插件目录可写，以便创建和维护 `.cache/`**。
 
 数据缓存过期后会由单个请求负责刷新；如果 Bangumi API 暂时不可用，插件会继续使用已有缓存，并在短暂退避后重试，避免页面内容突然清空或并发重复请求上游。
 
@@ -104,11 +112,26 @@ Bangumi 单部 Subject 条目卡片（正式适配动画、书籍、游戏、三
 
 单部 Subject 条目卡片不依赖特定主题正文类，并提供 `--pb-subject-bg`、`--pb-subject-border`、`--pb-subject-text`、`--pb-subject-muted`、`--pb-subject-accent` CSS 变量供主题按需覆盖。
 
-插件会把固定数据、Bangumi 条目数据和封面图片分别写入 `插件目录/cache/data/`、`cache/subjects/` 和 `cache/covers/`，请保证 `cache/` 及其子目录可写。数据缓存使用带直接访问防护的 `.php` 文件，不应通过 Web 读取原始内容；Apache 环境还会在缓存目录入口直接返回 `404`。Subject 缓存最多保留 256 项；封面缓存最多保留 2048 个文件且总计不超过 512 MiB，超限时优先保留当前日历、收藏列表和正在响应的封面。
+插件会把日历与收藏数据、Subject 数据和封面图片分别写入 `插件目录/.cache/data/`、`.cache/subjects/` 和 `.cache/covers/`。JSON 数据使用带 PHP `404` 前缀的 `.php` 文件；`.cache` 和各子目录带 `index.php`，Apache 还会使用随附的 `.htaccess` 拒绝访问。
+
+Nginx 和 Caddy 必须由站点配置拒绝隐藏缓存目录，返回 `403` 或 `404` 均可。例如：
+
+```nginx
+location ~ (^|/)\.cache(/|$) { return 404; }
+```
+
+```caddyfile
+@hiddenCache path_regexp hiddenCache (^|/)\.cache(/|$)
+respond @hiddenCache 404
+```
+
+“数据刷新间隔”和图片保留是两套规则：数据默认每 86400 秒刷新，最低 300 秒，`0`、负数或无效值按 300 秒处理；封面不会随 JSON 过期立即删除。插件每日最多进行一次年龄维护，清理超过 1 小时的临时文件，以及未被当前日历、全部收藏、近 90 天 Subject 或当前响应引用且文件年龄超过 90 天的封面。
+
+硬配额独立于 90 天保留：Subject 缓存最多 256 项；封面最多 2048 个文件且总计不超过 512 MiB。每次成功写入封面后会立即检查配额，必要时从最旧的未受保护封面开始删除；若受保护文件本身已经超额，插件会保留它们并写入 PHP 错误日志。
 
 插件会自动监听常见 PJAX 事件并重新初始化番剧展示。只有主题使用非标准 PJAX 事件、切换后仍未加载时，才需要在主题回调中手动调用 `window.PandaBangumi.init();`。
 
-升级到 3.0.3 开发版后，插件会在首次缓存初始化时直接删除 `cache/data/*.json`、`cache/subjects/*.json` 和旧 `json/` 缓存，不迁移旧数据；已有封面会保留并按新配额管理。从仍使用旧版图片配置的版本跨版本升级时，请先卸载旧版插件，再安装新版并重新配置。
+不要把 3.0.6 开发版直接覆盖到旧插件目录。升级要求见本文开头的“安装与升级”；新版本不会自动处理任何旧缓存。
 
 ## 开发测试
 
@@ -127,8 +150,8 @@ node tests/subject-card.js
 Typecho 直接加载的入口文件保留在插件根目录；内部 PHP 模块统一放在 `src/`：
 
 - `PluginConfig.php`：插件配置读取与规范化。
-- `HttpClient.php`、`HttpTransport.php`：Bangumi JSON 请求及可替换传输接口。
+- `HttpClient.php`、`HttpTransport.php`：带 4 MiB 响应上限的 Bangumi JSON 请求及可替换传输接口。
 - `CacheStore.php`：受保护文件缓存、安全初始化、原子写入、固定分片锁、配额和失败退避。
-- `RateLimiter.php`、`RateLimitExceeded.php`：冷 Subject 刷新和封面下载的令牌桶限流。
-- `CoverService.php`：封面校验、下载、缓存响应和清理。
+- `RateLimiter.php`、`RateLimitExceeded.php`、`UpstreamGate.php`：统一 API/封面令牌桶、共享并发槽和限流响应。
+- `CoverService.php`：封面校验、下载、缓存响应、90 天维护和硬配额。
 - `CollectionService.php`、`CalendarService.php`、`SubjectService.php`：各类数据刷新与输出。

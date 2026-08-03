@@ -79,6 +79,11 @@ final class PluginConfig
         return max($min, min($value, $max));
     }
 
+    public static function normalizeRefreshInterval(mixed $value): int
+    {
+        return max(300, is_scalar($value) ? (int)$value : 0);
+    }
+
     public function imageMode(): string
     {
         $options = $this->options();

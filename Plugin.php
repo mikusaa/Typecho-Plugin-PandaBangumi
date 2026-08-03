@@ -20,11 +20,11 @@ if (!defined('__TYPECHO_ROOT_DIR__')) {
  *
  * @package PandaBangumi
  * @author 熊猫小A
- * @version 3.0.3
+ * @version 3.0.6
  * @link https://www.himiku.com/archives/pandabangumi.html
  */
 
-define('PandaBangumi_Plugin_VERSION', '3.0.3');
+define('PandaBangumi_Plugin_VERSION', '3.0.6');
 
 class Plugin implements PluginInterface
 {
@@ -133,7 +133,7 @@ class Plugin implements PluginInterface
         );
         $form->addInput($ImageMode);
 
-        $ValidTimeSpan = new Text('ValidTimeSpan', NULL, '86400', _t('缓存过期时间'), _t('设置缓存过期时间，单位为秒，默认 24 小时。'));
+        $ValidTimeSpan = new Text('ValidTimeSpan', NULL, '86400', _t('数据刷新间隔'), _t('设置 JSON 数据重新请求 Bangumi API 的间隔，单位为秒，默认 24 小时，最低 300 秒。'));
         $form->addInput($ValidTimeSpan);
 
         $Limit = new Text('Limit', NULL, '30', _t('收藏列表数量上限'), _t('同时限制各分类的在看和已看列表，每类严格获取 0–300 条；设置过大可能增加 Bangumi API 请求频率。'));

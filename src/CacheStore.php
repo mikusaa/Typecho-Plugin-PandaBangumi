@@ -7,9 +7,11 @@ final class CacheStore
     public const PHP_PREFIX = "<?php http_response_code(404); exit; ?>\n";
 
     private const FAILURE_RETRY = 300;
-    private const LAYOUT_VERSION = 1;
+    private const LAYOUT_VERSION = 2;
     private const SUBJECT_LIMIT = 256;
     private const LOCK_SLOTS = 64;
+    private const INDEX_GUARD = "<?php\n\nhttp_response_code(404);\nexit;\n";
+    private const APACHE_GUARD = "<IfModule mod_rewrite.c>\n    RewriteEngine On\n    RewriteRule ^ - [R=404,L]\n</IfModule>\n";
 
     /** @var callable */
     private $clock;
@@ -39,6 +41,32 @@ final class CacheStore
             return is_writable($directory);
         }
         return @mkdir($directory, 0755, true) && is_writable($directory);
+    }
+
+    private function ensureGuardFile(string $filePath, string $content): bool
+    {
+        if (is_file($filePath)) {
+            return true;
+        }
+
+        return file_put_contents($filePath, $content, LOCK_EX) !== false;
+    }
+
+    private function ensureGuards(): bool
+    {
+        if (!$this->ensureGuardFile($this->root . '/.htaccess', self::APACHE_GUARD)) {
+            return false;
+        }
+        if (!$this->ensureGuardFile($this->root . '/index.php', self::INDEX_GUARD)) {
+            return false;
+        }
+
+        foreach (array('data', 'subjects', 'covers', 'state', 'locks') as $directory) {
+            if (!$this->ensureGuardFile($this->root . '/' . $directory . '/index.php', self::INDEX_GUARD)) {
+                return false;
+            }
+        }
+        return true;
     }
 
     public function directory(string $name): string
@@ -161,13 +189,31 @@ final class CacheStore
         $slot = hexdec(substr($hash, 0, 8)) % self::LOCK_SLOTS;
         $filePath = $this->directory('locks') . '/' . $scope . '-' . sprintf('%02d', $slot) . '.lock';
         $lockHandle = @fopen($filePath, 'c');
-        if ($lockHandle === false || !flock($lockHandle, LOCK_EX)) {
+        if ($lockHandle === false || !flock($lockHandle, LOCK_EX | LOCK_NB)) {
             if (is_resource($lockHandle)) {
                 fclose($lockHandle);
             }
             return false;
         }
         return $lockHandle;
+    }
+
+    /** @return resource|false */
+    public function acquireConcurrencySlot(string $scope, int $slots)
+    {
+        $scope = preg_replace('/[^a-z0-9_-]/i', '', strtolower($scope)) ?: 'upstream';
+        $slots = max(1, min(16, $slots));
+        for ($slot = 0; $slot < $slots; $slot++) {
+            $filePath = $this->directory('locks') . '/concurrency-' . $scope . '-' . sprintf('%02d', $slot) . '.lock';
+            $lockHandle = @fopen($filePath, 'c');
+            if ($lockHandle !== false && flock($lockHandle, LOCK_EX | LOCK_NB)) {
+                return $lockHandle;
+            }
+            if (is_resource($lockHandle)) {
+                fclose($lockHandle);
+            }
+        }
+        return false;
     }
 
     /** @return resource|false */
@@ -229,80 +275,32 @@ final class CacheStore
             }
         }
 
-        $lockHandle = $this->acquireShardLock('initialize', 'layout');
-        if ($lockHandle === false) {
+        if (!$this->ensureGuards()) {
             return false;
         }
 
-        try {
-            $layoutPath = $this->statePath('layout.php');
-            $layout = $this->read($layoutPath);
-            if ((int)($layout['version'] ?? 0) !== self::LAYOUT_VERSION) {
-                if (!$this->removeLegacyCaches()) {
-                    return false;
-                }
-                if (!$this->write($layoutPath, array(
-                    'version' => self::LAYOUT_VERSION,
-                    'initialized_at' => $this->now()
-                ))) {
-                    return false;
-                }
-            }
-            $this->pruneSubjectCaches();
+        $layoutPath = $this->statePath('layout.php');
+        $layout = $this->read($layoutPath);
+        if ((int)($layout['version'] ?? 0) === self::LAYOUT_VERSION) {
             return true;
+        }
+
+        $lockHandle = $this->acquireShardLock('initialize', 'layout');
+        if ($lockHandle === false) {
+            return true;
+        }
+
+        try {
+            $layout = $this->read($layoutPath);
+            if ((int)($layout['version'] ?? 0) === self::LAYOUT_VERSION) {
+                return true;
+            }
+            return $this->write($layoutPath, array(
+                'version' => self::LAYOUT_VERSION,
+                'initialized_at' => $this->now()
+            ));
         } finally {
             $this->releaseRefreshLock($lockHandle);
         }
-    }
-
-    private function removeLegacyCaches(): bool
-    {
-        $success = true;
-        foreach (array('data', 'subjects') as $directoryName) {
-            $entries = glob($this->root . '/' . $directoryName . '/*.json');
-            foreach (is_array($entries) ? $entries : array() as $entry) {
-                if (is_file($entry) || is_link($entry)) {
-                    $success = @unlink($entry) && $success;
-                }
-            }
-        }
-
-        foreach (array('data', 'subjects', 'covers') as $directoryName) {
-            $entries = glob($this->root . '/' . $directoryName . '/*.lock');
-            foreach (is_array($entries) ? $entries : array() as $entry) {
-                if (is_file($entry) || is_link($entry)) {
-                    $success = @unlink($entry) && $success;
-                }
-            }
-        }
-
-        $legacyDirectory = dirname($this->root) . '/json';
-        return $this->removeDirectory($legacyDirectory) && $success;
-    }
-
-    private function removeDirectory(string $directory): bool
-    {
-        if (!is_dir($directory) || is_link($directory)) {
-            if (is_link($directory)) {
-                return @unlink($directory);
-            }
-            return true;
-        }
-
-        $success = true;
-        $entries = scandir($directory);
-        if (is_array($entries)) {
-            foreach ($entries as $entry) {
-                if ($entry === '.' || $entry === '..') {
-                    continue;
-                }
-                $path = $directory . '/' . $entry;
-                $removed = is_dir($path) && !is_link($path)
-                    ? $this->removeDirectory($path)
-                    : @unlink($path);
-                $success = $removed && $success;
-            }
-        }
-        return @rmdir($directory) && $success;
     }
 }

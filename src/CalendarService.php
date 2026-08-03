@@ -81,7 +81,10 @@ final class CalendarService
 
         $lockHandle = $this->cacheStore->acquireRefreshLock($filePath);
         if ($lockHandle === false) {
-            return $isCompatible($stored) ? $stored : self::EMPTY_CACHE;
+            if ($isCompatible($stored)) {
+                return $stored;
+            }
+            throw new RateLimitExceeded(1);
         }
 
         try {
@@ -99,7 +102,6 @@ final class CalendarService
                     'data' => $raw
                 );
                 $this->cacheStore->write($filePath, $cache);
-                $this->coverService->cleanup($raw);
                 return $cache;
             }
 
@@ -118,6 +120,7 @@ final class CalendarService
         int $validTimeSpan
     ): string {
         $cache = $this->normalize($this->calendarCache($validTimeSpan));
+        $this->coverService->maybeRunMaintenance();
         if ($filter !== 'watching') {
             return $this->encode($this->coverService->prepareCalendar($cache['data']));
         }

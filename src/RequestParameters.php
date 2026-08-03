@@ -12,14 +12,22 @@ final class RequestParameters
 
     public function category(array $query): string
     {
-        $category = strtolower((string)($query['cate'] ?? 'anime'));
+        $value = $query['cate'] ?? 'anime';
+        if (!is_scalar($value)) {
+            return '';
+        }
+        $category = strtolower((string)$value);
         return array_key_exists($category, $this->collectionSubjectTypes) ? $category : '';
     }
 
     public function collectionList(array $query): string
     {
         $category = $this->category($query);
-        $type = strtolower((string)($query['type'] ?? ''));
+        $value = $query['type'] ?? '';
+        if (!is_scalar($value)) {
+            return '';
+        }
+        $type = strtolower((string)$value);
         return $category !== '' && in_array($type, $this->collectionListTypes[$category] ?? array(), true)
             ? $type
             : '';
@@ -27,7 +35,11 @@ final class RequestParameters
 
     public function calendarFilter(array $query): string
     {
-        return strtolower((string)($query['filter'] ?? 'watching')) === 'watching'
+        $value = $query['filter'] ?? 'watching';
+        if (!is_scalar($value)) {
+            return '';
+        }
+        return strtolower((string)$value) === 'watching'
             ? 'watching'
             : 'all';
     }

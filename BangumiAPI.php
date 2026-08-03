@@ -8,6 +8,7 @@ require_once __DIR__ . '/src/HttpClient.php';
 require_once __DIR__ . '/src/CacheStore.php';
 require_once __DIR__ . '/src/RateLimitExceeded.php';
 require_once __DIR__ . '/src/RateLimiter.php';
+require_once __DIR__ . '/src/UpstreamGate.php';
 require_once __DIR__ . '/src/CoverService.php';
 require_once __DIR__ . '/src/RequestParameters.php';
 require_once __DIR__ . '/src/CollectionService.php';
@@ -37,6 +38,7 @@ class BangumiAPI
     private static ?HttpClient $httpClient = null;
     private static ?CacheStore $cacheStore = null;
     private static ?RateLimiter $rateLimiter = null;
+    private static ?UpstreamGate $upstreamGate = null;
     private static ?CoverService $coverService = null;
     private static ?RequestParameters $requestParameters = null;
     private static ?CollectionService $collectionService = null;
@@ -50,17 +52,22 @@ class BangumiAPI
 
     private static function httpClient(): HttpClient
     {
-        return self::$httpClient ??= new HttpClient(self::config());
+        return self::$httpClient ??= new HttpClient(self::config(), self::upstreamGate());
     }
 
     private static function cacheStore(): CacheStore
     {
-        return self::$cacheStore ??= new CacheStore(__DIR__ . '/cache');
+        return self::$cacheStore ??= new CacheStore(__DIR__ . '/.cache');
     }
 
     private static function rateLimiter(): RateLimiter
     {
         return self::$rateLimiter ??= new RateLimiter(self::cacheStore());
+    }
+
+    private static function upstreamGate(): UpstreamGate
+    {
+        return self::$upstreamGate ??= new UpstreamGate(self::cacheStore(), self::rateLimiter());
     }
 
     private static function coverService(): CoverService
@@ -71,12 +78,11 @@ class BangumiAPI
         self::$coverService = new CoverService(
             self::config(),
             self::cacheStore(),
-            self::rateLimiter(),
+            self::upstreamGate(),
             self::COLLECTION_SUBJECT_TYPES,
             self::COLLECTION_LIST_TYPES,
             self::COLLECTION_CACHE_VARIANT
         );
-        self::$coverService->cleanup();
         return self::$coverService;
     }
 
@@ -107,8 +113,7 @@ class BangumiAPI
             self::config(),
             self::httpClient(),
             self::cacheStore(),
-            self::coverService(),
-            self::rateLimiter()
+            self::coverService()
         );
     }
 
@@ -133,7 +138,7 @@ class BangumiAPI
     {
         $initialized = self::cacheStore()->initialize();
         if ($initialized) {
-            self::coverService();
+            self::coverService()->maybeRunMaintenance();
         }
         return $initialized;
     }
@@ -185,7 +190,10 @@ class BangumiAPI
 
     public static function updateSubjectCacheAndReturn(int $subjectId, int $validTimeSpan): string
     {
-        return self::subjectService()->update($subjectId, $validTimeSpan);
+        return self::subjectService()->update(
+            $subjectId,
+            PluginConfig::normalizeRefreshInterval($validTimeSpan)
+        );
     }
 
     public static function updateCollectionCacheAndReturn(
@@ -207,7 +215,7 @@ class BangumiAPI
             $category,
             $pageSize,
             $from,
-            $validTimeSpan
+            PluginConfig::normalizeRefreshInterval($validTimeSpan)
         );
     }
 
@@ -216,7 +224,7 @@ class BangumiAPI
         return self::calendarService()->update(
             $userId,
             self::requestParameters()->calendarFilter($_GET),
-            $validTimeSpan
+            PluginConfig::normalizeRefreshInterval($validTimeSpan)
         );
     }
 }

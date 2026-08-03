@@ -9,6 +9,9 @@ final class CoverService
     private const MAX_BYTES = 5242880;
     private const CACHE_MAX_BYTES = 536870912;
     private const CACHE_MAX_ENTRIES = 2048;
+    private const RETENTION_SECONDS = 7776000;
+    private const MAINTENANCE_INTERVAL = 86400;
+    private const TEMP_MAX_AGE = 3600;
     private const MIME_TYPES = array(
         'image/jpeg' => 'jpg',
         'image/png' => 'png',
@@ -19,7 +22,7 @@ final class CoverService
     public function __construct(
         private PluginConfig $config,
         private CacheStore $cacheStore,
-        private RateLimiter $rateLimiter,
+        private UpstreamGate $upstreamGate,
         private array $collectionSubjectTypes,
         private array $collectionListTypes,
         private string $collectionCacheVariant,
@@ -239,93 +242,90 @@ final class CoverService
             throw new RateLimitExceeded(1);
         }
 
-        if (count($this->findCached($basePath)) > 0) {
-            $this->cacheStore->releaseRefreshLock($lockHandle);
-            return true;
-        }
-
-        $target = $this->resolveFetchTarget($cover);
-        if ($target === null) {
-            $this->cacheStore->releaseRefreshLock($lockHandle);
-            return false;
-        }
         try {
-            $this->rateLimiter->consumeCover();
-        } catch (RateLimitExceeded $error) {
-            $this->cacheStore->releaseRefreshLock($lockHandle);
-            throw $error;
-        }
-        $tmpFile = tempnam($directory, 'pb_cover_');
-        $fileHandle = $tmpFile !== false ? @fopen($tmpFile, 'wb') : false;
-        $curl = $fileHandle !== false ? curl_init($target['url']) : false;
-        if ($tmpFile === false || $fileHandle === false || $curl === false) {
-            if (is_resource($fileHandle)) {
+            if (count($this->findCached($basePath)) > 0) {
+                return true;
+            }
+
+            $target = $this->resolveFetchTarget($cover);
+            if ($target === null) {
+                return false;
+            }
+
+            return $this->upstreamGate->cover(function () use ($directory, $target, $basePath): bool {
+                $tmpFile = tempnam($directory, 'pb_cover_');
+                $fileHandle = $tmpFile !== false ? @fopen($tmpFile, 'wb') : false;
+                $curl = $fileHandle !== false ? curl_init($target['url']) : false;
+                if ($tmpFile === false || $fileHandle === false || $curl === false) {
+                    if (is_resource($fileHandle)) {
+                        fclose($fileHandle);
+                    }
+                    if ($tmpFile !== false) {
+                        @unlink($tmpFile);
+                    }
+                    return false;
+                }
+
+                $bytes = 0;
+                curl_setopt($curl, CURLOPT_SSL_VERIFYPEER, true);
+                curl_setopt($curl, CURLOPT_SSL_VERIFYHOST, 2);
+                curl_setopt($curl, CURLOPT_HEADER, false);
+                curl_setopt($curl, CURLOPT_CONNECTTIMEOUT, 5);
+                curl_setopt($curl, CURLOPT_TIMEOUT, 15);
+                curl_setopt($curl, CURLOPT_FOLLOWLOCATION, false);
+                if (defined('CURLOPT_PROTOCOLS') && defined('CURLPROTO_HTTPS')) {
+                    curl_setopt($curl, CURLOPT_PROTOCOLS, CURLPROTO_HTTPS);
+                }
+                if (count($target['resolve']) > 0) {
+                    curl_setopt($curl, CURLOPT_RESOLVE, $target['resolve']);
+                }
+                curl_setopt($curl, CURLOPT_REFERER, 'https://bgm.tv/');
+                curl_setopt($curl, CURLOPT_USERAGENT, $this->config->userAgent());
+                curl_setopt($curl, CURLOPT_WRITEFUNCTION, static function ($handle, string $chunk) use ($fileHandle, &$bytes): int {
+                    $length = strlen($chunk);
+                    if ($bytes + $length > self::MAX_BYTES) {
+                        return 0;
+                    }
+
+                    $written = fwrite($fileHandle, $chunk);
+                    if ($written === false) {
+                        return 0;
+                    }
+                    $bytes += $written;
+                    return $written;
+                });
+
+                $result = curl_exec($curl);
+                $httpCode = (int)curl_getinfo($curl, CURLINFO_RESPONSE_CODE);
+                $curlError = curl_error($curl);
+                curl_close($curl);
                 fclose($fileHandle);
-            }
-            if ($tmpFile !== false) {
-                @unlink($tmpFile);
-            }
+
+                $mime = $this->cachedMime($tmpFile);
+                $valid = $result !== false
+                    && $httpCode >= 200
+                    && $httpCode < 300
+                    && $bytes > 0
+                    && $mime !== '';
+
+                $cachePath = '';
+                if ($valid) {
+                    $cachePath = $basePath . '.' . self::MIME_TYPES[$mime];
+                    $valid = @rename($tmpFile, $cachePath);
+                    if ($valid) {
+                        @chmod($cachePath, 0644);
+                        $this->enforceQuota($cachePath);
+                    }
+                }
+                if (!$valid) {
+                    @unlink($tmpFile);
+                    error_log('PandaBangumi cover request failed: HTTP ' . $httpCode . ' ' . $curlError);
+                }
+                return $valid;
+            });
+        } finally {
             $this->cacheStore->releaseRefreshLock($lockHandle);
-            return false;
         }
-
-        $bytes = 0;
-        curl_setopt($curl, CURLOPT_SSL_VERIFYPEER, true);
-        curl_setopt($curl, CURLOPT_SSL_VERIFYHOST, 2);
-        curl_setopt($curl, CURLOPT_HEADER, false);
-        curl_setopt($curl, CURLOPT_CONNECTTIMEOUT, 5);
-        curl_setopt($curl, CURLOPT_TIMEOUT, 15);
-        curl_setopt($curl, CURLOPT_FOLLOWLOCATION, false);
-        if (defined('CURLOPT_PROTOCOLS') && defined('CURLPROTO_HTTPS')) {
-            curl_setopt($curl, CURLOPT_PROTOCOLS, CURLPROTO_HTTPS);
-        }
-        if (count($target['resolve']) > 0) {
-            curl_setopt($curl, CURLOPT_RESOLVE, $target['resolve']);
-        }
-        curl_setopt($curl, CURLOPT_REFERER, 'https://bgm.tv/');
-        curl_setopt($curl, CURLOPT_USERAGENT, $this->config->userAgent());
-        curl_setopt($curl, CURLOPT_WRITEFUNCTION, static function ($handle, string $chunk) use ($fileHandle, &$bytes): int {
-            $length = strlen($chunk);
-            if ($bytes + $length > self::MAX_BYTES) {
-                return 0;
-            }
-
-            $written = fwrite($fileHandle, $chunk);
-            if ($written === false) {
-                return 0;
-            }
-            $bytes += $written;
-            return $written;
-        });
-
-        $result = curl_exec($curl);
-        $httpCode = (int)curl_getinfo($curl, CURLINFO_RESPONSE_CODE);
-        $curlError = curl_error($curl);
-        curl_close($curl);
-        fclose($fileHandle);
-
-        $mime = $this->cachedMime($tmpFile);
-        $valid = $result !== false
-            && $httpCode >= 200
-            && $httpCode < 300
-            && $bytes > 0
-            && $mime !== '';
-
-        if ($valid) {
-            $cachePath = $basePath . '.' . self::MIME_TYPES[$mime];
-            $valid = @rename($tmpFile, $cachePath);
-            if ($valid) {
-                @chmod($cachePath, 0644);
-                $this->cleanup(array(), $cachePath);
-            }
-        }
-        if (!$valid) {
-            @unlink($tmpFile);
-            error_log('PandaBangumi cover request failed: HTTP ' . $httpCode . ' ' . $curlError);
-        }
-
-        $this->cacheStore->releaseRefreshLock($lockHandle);
-        return $valid;
     }
 
     private function response(int $subjectId, string $version, string $source): array
@@ -348,6 +348,7 @@ final class CoverService
             return array('status' => 404);
         }
 
+        $this->maybeRunMaintenance(array(), $cached['file']);
         return array('status' => 200, 'file' => $cached['file'], 'mime' => $cached['mime']);
     }
 
@@ -434,13 +435,8 @@ final class CoverService
         }
     }
 
-    public function cleanup(array $calendar = array(), string $currentFile = ''): void
+    private function referencedCovers(array $calendar = array(), string $currentFile = ''): array
     {
-        $directory = $this->cacheStore->directory('covers');
-        if (!is_dir($directory) || !is_readable($directory)) {
-            return;
-        }
-
         $referenced = array();
         if ($currentFile !== '') {
             $referenced[basename($currentFile)] = true;
@@ -469,9 +465,36 @@ final class CoverService
             }
         }
 
+        $subjectDirectory = $this->cacheStore->directory('subjects');
+        $subjectEntries = is_readable($subjectDirectory) ? scandir($subjectDirectory) : false;
+        $recentCutoff = $this->cacheStore->now() - self::RETENTION_SECONDS;
+        foreach (is_array($subjectEntries) ? $subjectEntries : array() as $entry) {
+            if (!preg_match('/^[1-9][0-9]*\.php$/', $entry)) {
+                continue;
+            }
+            $path = $subjectDirectory . '/' . $entry;
+            $modified = @filemtime($path);
+            if ($modified === false || $modified < $recentCutoff) {
+                continue;
+            }
+            $cache = $this->cacheStore->read($path);
+            if (isset($cache['data']) && is_array($cache['data'])) {
+                $this->addReferenced($referenced, $cache['data']);
+            }
+        }
+        return $referenced;
+    }
+
+    private function coverFiles(array $referenced, bool $removeOldTemporary): array
+    {
+        $directory = $this->cacheStore->directory('covers');
+        if (!is_dir($directory) || !is_readable($directory)) {
+            return array();
+        }
+
         $entries = scandir($directory);
         if ($entries === false) {
-            return;
+            return array();
         }
         $files = array();
         foreach ($entries as $entry) {
@@ -484,8 +507,8 @@ final class CoverService
             if ($modified === false) {
                 continue;
             }
-            if (str_ends_with($entry, '.lock') || str_starts_with($entry, 'pb_cover_')) {
-                if ($modified < $this->cacheStore->now() - 3600) {
+            if (str_starts_with($entry, 'pb_cover_')) {
+                if ($removeOldTemporary && $modified < $this->cacheStore->now() - self::TEMP_MAX_AGE) {
                     @unlink($path);
                 }
                 continue;
@@ -504,21 +527,23 @@ final class CoverService
         }
 
         usort($files, static fn(array $left, array $right): int => $left['modified'] <=> $right['modified']);
+        return $files;
+    }
+
+    private function pruneQuota(array $files): void
+    {
         $count = count($files);
         $bytes = array_sum(array_column($files, 'size'));
         foreach ($files as $file) {
             if ($file['protected']) {
                 continue;
             }
-            $overQuota = $count > max(0, $this->maxCacheEntries)
-                || $bytes > max(0, $this->maxCacheBytes);
-            if (!$overQuota) {
+            if ($count <= max(0, $this->maxCacheEntries) && $bytes <= max(0, $this->maxCacheBytes)) {
                 break;
             }
             if (@unlink($file['path'])) {
                 $count--;
                 $bytes -= $file['size'];
-                @unlink(substr($file['path'], 0, strrpos($file['path'], '.')) . '.lock');
             }
         }
 
@@ -528,5 +553,59 @@ final class CoverService
                 . $count . ' files, ' . $bytes . ' bytes'
             );
         }
+    }
+
+    public function enforceQuota(string $currentFile = ''): void
+    {
+        $referenced = $this->referencedCovers(array(), $currentFile);
+        $this->pruneQuota($this->coverFiles($referenced, false));
+    }
+
+    public function maybeRunMaintenance(
+        array $calendar = array(),
+        string $currentFile = '',
+        bool $force = false
+    ): void {
+        $statePath = $this->cacheStore->statePath('maintenance.php');
+        $state = $this->cacheStore->read($statePath);
+        $lastRun = (int)($state['last_run'] ?? 0);
+        if (!$force && $lastRun > 0 && $this->cacheStore->now() - $lastRun < self::MAINTENANCE_INTERVAL) {
+            return;
+        }
+
+        $lockHandle = $this->cacheStore->acquireShardLock('maintenance', 'covers');
+        if ($lockHandle === false) {
+            return;
+        }
+
+        try {
+            $state = $this->cacheStore->read($statePath);
+            $lastRun = (int)($state['last_run'] ?? 0);
+            if (!$force && $lastRun > 0 && $this->cacheStore->now() - $lastRun < self::MAINTENANCE_INTERVAL) {
+                return;
+            }
+
+            $referenced = $this->referencedCovers($calendar, $currentFile);
+            $files = $this->coverFiles($referenced, true);
+            $retentionCutoff = $this->cacheStore->now() - self::RETENTION_SECONDS;
+            foreach ($files as $index => $file) {
+                if (!$file['protected'] && $file['modified'] < $retentionCutoff && @unlink($file['path'])) {
+                    unset($files[$index]);
+                }
+            }
+
+            $this->pruneQuota(array_values($files));
+            $this->cacheStore->write($statePath, array(
+                'version' => 1,
+                'last_run' => $this->cacheStore->now()
+            ));
+        } finally {
+            $this->cacheStore->releaseRefreshLock($lockHandle);
+        }
+    }
+
+    public function cleanup(array $calendar = array(), string $currentFile = ''): void
+    {
+        $this->maybeRunMaintenance($calendar, $currentFile, true);
     }
 }
