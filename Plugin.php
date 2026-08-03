@@ -20,11 +20,11 @@ if (!defined('__TYPECHO_ROOT_DIR__')) {
  *
  * @package PandaBangumi
  * @author 熊猫小A
- * @version 3.0.2.12
+ * @version 3.0.2.13
  * @link https://www.imalan.cn
  */
 
-define('PandaBangumi_Plugin_VERSION', '3.0.2.12');
+define('PandaBangumi_Plugin_VERSION', '3.0.2.13');
 
 class Plugin implements PluginInterface
 {

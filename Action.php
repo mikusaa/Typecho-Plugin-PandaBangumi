@@ -88,7 +88,13 @@ class Action extends Contents implements ActionInterface
             }
             $etag = '"pb-cover-' . $subjectId . '-' . $version . '"';
             $modifiedTime = @filemtime($cover['file']);
+
+            // Logged-in Typecho sessions install no-cache headers before the route runs.
+            header_remove('Cache-Control');
+            header_remove('Expires');
+            header_remove('Pragma');
             $this->response->setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+            $this->response->setHeader('Expires', gmdate('D, d M Y H:i:s', time() + 31536000) . ' GMT');
             $this->response->setHeader('ETag', $etag);
             if ($modifiedTime !== false) {
                 $this->response->setHeader('Last-Modified', gmdate('D, d M Y H:i:s', $modifiedTime) . ' GMT');
