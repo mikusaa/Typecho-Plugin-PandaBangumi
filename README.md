@@ -92,6 +92,8 @@ JSON 缓存过期后会由单个请求负责刷新；如果 Bangumi API 暂时�
 
 不一定所有主题都完美。
 
-插件会把固定 JSON 数据、Bangumi 条目 JSON 和封面图片分别写入 `插件目录/cache/data/`、`cache/subjects/` 和 `cache/covers/`，请保证 `cache/` 及其子目录可写。升级后会自动迁移旧 `json/` 目录中的缓存；缓存刷新时会自动删除已不再被日历、收藏列表或近期条目卡片引用且超过 90 天的封面。
+插件会把固定 JSON 数据、Bangumi 条目 JSON 和封面图片分别写入 `插件目录/cache/data/`、`cache/subjects/` 和 `cache/covers/`，请保证 `cache/` 及其子目录可写。缓存刷新时会自动删除已不再被日历、收藏列表或近期条目卡片引用且超过 90 天的封面。
 
-插件会自动监听常见 PJAX 事件并重新初始化番剧展示。只有主题使用非标准 PJAX 事件、切换后仍未加载时，才需要在主题回调中手动调用 `window.PandaBangumi.init();`；旧接口 `initCollection();` 仍然保留兼容。
+插件会自动监听常见 PJAX 事件并重新初始化番剧展示。只有主题使用非标准 PJAX 事件、切换后仍未加载时，才需要在主题回调中手动调用 `window.PandaBangumi.init();`。
+
+从仍使用旧版图片配置或 `json/` 缓存目录的版本跨版本升级时，请先卸载旧版插件，再安装新版并重新配置。

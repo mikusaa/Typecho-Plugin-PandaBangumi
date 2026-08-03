@@ -1002,13 +1002,6 @@ async function initCollection() {
         item.dataset.bgmInitialized = '1';
         item.dataset.bgmOffset = '0';
 
-        const legacyLoader = item.nextElementSibling && item.nextElementSibling.classList.contains('loader')
-            ? item.nextElementSibling
-            : null;
-        if (legacyLoader) {
-            legacyLoader.remove();
-        }
-
         const action = createCollectionActionButton();
         item.appendChild(action);
         initialLoads.push(loadMoreBgm(action));
@@ -1036,7 +1029,6 @@ function scheduleInit() {
 }
 
 PandaBangumiRuntime.init = scheduleInit;
-window.initCollection = initCollection;
 
 if (!PandaBangumiRuntime.bound) {
     PandaBangumiRuntime.bound = true;

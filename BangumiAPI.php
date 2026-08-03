@@ -29,8 +29,6 @@ class BangumiAPI
         'image/gif' => 'gif'
     );
     private const EMPTY_COLLECTION_CACHE = array('time' => 1, 'data' => array());
-    private static array $legacyCacheDirectoriesMigrated = array();
-
     /**
      * 获取 Bangumi API 基础地址
      *
@@ -138,20 +136,14 @@ class BangumiAPI
     }
 
     /**
-     * 获取封面加载方式，并兼容一个版本的旧配置
+     * 获取封面加载方式
      */
     private static function getImageMode(): string
     {
         try {
             $pluginOptions = Helper::options()->plugin('PandaBangumi');
             $mode = strtolower(trim((string)($pluginOptions->ImageMode ?? '')));
-            if (in_array($mode, ['direct', 'cache'], true)) {
-                return $mode;
-            }
-
-            $legacyCache = (string)($pluginOptions->ProxyImages ?? '0') === '1'
-                || (string)($pluginOptions->CacheCollectionImages ?? '0') === '1';
-            return $legacyCache ? 'cache' : 'direct';
+            return in_array($mode, ['direct', 'cache'], true) ? $mode : 'direct';
         } catch (\Throwable $e) {
             return 'direct';
         }
@@ -531,93 +523,12 @@ class BangumiAPI
     }
 
     /**
-     * 将旧缓存文件原子迁移到新位置
-     */
-    private static function migrateLegacyCacheFile(string $legacyPath, string $targetPath): bool
-    {
-        if (is_file($targetPath)) {
-            return true;
-        }
-        if (!is_file($legacyPath) || !is_readable($legacyPath)) {
-            return false;
-        }
-
-        $directory = dirname($targetPath);
-        if (!self::ensureCacheDirectory($directory)) {
-            return false;
-        }
-        if (@rename($legacyPath, $targetPath)) {
-            return true;
-        }
-
-        $tmpFile = tempnam($directory, 'pb_migrate_');
-        if ($tmpFile === false || !@copy($legacyPath, $tmpFile)) {
-            if ($tmpFile !== false) {
-                @unlink($tmpFile);
-            }
-            return false;
-        }
-
-        $legacySize = filesize($legacyPath);
-        $tmpSize = filesize($tmpFile);
-        $legacyHash = hash_file('sha256', $legacyPath);
-        $tmpHash = hash_file('sha256', $tmpFile);
-        $valid = $legacySize !== false
-            && $tmpSize === $legacySize
-            && is_string($legacyHash)
-            && is_string($tmpHash)
-            && hash_equals($legacyHash, $tmpHash);
-
-        if ($valid && @rename($tmpFile, $targetPath)) {
-            @unlink($legacyPath);
-            return true;
-        }
-
-        @unlink($tmpFile);
-        return is_file($targetPath);
-    }
-
-    /**
-     * 迁移旧 json 目录中的分类缓存
-     */
-    private static function migrateLegacyCacheDirectory(string $name, string $targetDirectory): void
-    {
-        if (isset(self::$legacyCacheDirectoriesMigrated[$name])) {
-            return;
-        }
-        self::$legacyCacheDirectoriesMigrated[$name] = true;
-
-        $legacyDirectory = __DIR__ . '/json/' . $name;
-        if (!is_dir($legacyDirectory) || !is_readable($legacyDirectory)) {
-            return;
-        }
-
-        $entries = scandir($legacyDirectory);
-        if ($entries === false) {
-            return;
-        }
-
-        foreach ($entries as $entry) {
-            if ($entry === '.' || $entry === '..') {
-                continue;
-            }
-
-            $legacyPath = $legacyDirectory . '/' . $entry;
-            if (is_file($legacyPath)) {
-                self::migrateLegacyCacheFile($legacyPath, $targetDirectory . '/' . $entry);
-            }
-        }
-    }
-
-    /**
      * 获取固定 JSON 数据缓存路径
      */
     private static function getDataCachePath(string $fileName): string
     {
         $fileName = basename($fileName);
-        $targetPath = self::getCacheDirectory('data') . '/' . $fileName;
-        self::migrateLegacyCacheFile(__DIR__ . '/json/' . $fileName, $targetPath);
-        return $targetPath;
+        return self::getCacheDirectory('data') . '/' . $fileName;
     }
 
     /**
@@ -633,9 +544,7 @@ class BangumiAPI
      */
     private static function getSubjectCacheDirectory(): string
     {
-        $directory = self::getCacheDirectory('subjects');
-        self::migrateLegacyCacheDirectory('subjects', $directory);
-        return $directory;
+        return self::getCacheDirectory('subjects');
     }
 
     /**
@@ -643,9 +552,7 @@ class BangumiAPI
      */
     private static function getCoverCacheDirectory(): string
     {
-        $directory = self::getCacheDirectory('covers');
-        self::migrateLegacyCacheDirectory('covers', $directory);
-        return $directory;
+        return self::getCacheDirectory('covers');
     }
 
     /**
