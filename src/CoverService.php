@@ -19,6 +19,7 @@ final class CoverService
         private PluginConfig $config,
         private CacheStore $cacheStore,
         private array $collectionSubjectTypes,
+        private array $collectionListTypes,
         private string $collectionCacheVariant
     ) {
     }
@@ -349,8 +350,8 @@ final class CoverService
     public function getCollectionCover(int $subjectId, string $version, string $list, string $category): array
     {
         if (
-            !in_array($list, ['watching', 'watched'], true)
-            || !array_key_exists($category, $this->collectionSubjectTypes)
+            !array_key_exists($category, $this->collectionSubjectTypes)
+            || !in_array($list, $this->collectionListTypes[$category] ?? array(), true)
         ) {
             return array('status' => 404);
         }
@@ -439,8 +440,8 @@ final class CoverService
             }
         }
 
-        foreach (['watching', 'watched'] as $list) {
-            foreach (array_keys($this->collectionSubjectTypes) as $category) {
+        foreach (array_keys($this->collectionSubjectTypes) as $category) {
+            foreach ($this->collectionListTypes[$category] ?? array() as $list) {
                 $cache = $this->cacheStore->read(
                     $this->cacheStore->dataPath($this->collectionFileName($list, $category))
                 );

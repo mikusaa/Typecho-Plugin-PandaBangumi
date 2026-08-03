@@ -30,6 +30,8 @@ const sandbox = {
 vm.createContext(sandbox);
 vm.runInContext(source, sandbox, { filename: 'PandaBangumi.js' });
 const normalize = vm.runInContext('normalizeSubjectCardData', sandbox);
+const normalizeCollection = vm.runInContext('normalizeCollectionType', sandbox);
+const isCompletedCollection = vm.runInContext('isCompletedCollectionType', sandbox);
 
 function normalized(name) {
     const fixture = fixtures[name];
@@ -84,4 +86,18 @@ assert.equal(missing.secondaryMeta, '');
 assert.equal(missing.musicCredit, '');
 assert.deepEqual(missing.tags, []);
 
-process.stdout.write('7 subject card fixture tests passed\n');
+const collectionTypes = {
+    anime: ['watching', 'watched'],
+    real: ['watching', 'watched'],
+    book: ['reading', 'read'],
+    game: ['playing', 'played'],
+    music: ['listening', 'listened']
+};
+Object.entries(collectionTypes).forEach(([category, [active, completed]]) => {
+    assert.equal(normalizeCollection(active, category), active);
+    assert.equal(normalizeCollection(completed, category), completed);
+    assert.equal(isCompletedCollection(active, category), false);
+    assert.equal(isCompletedCollection(completed, category), true);
+});
+
+process.stdout.write('7 subject card fixtures and 10 collection type mappings passed\n');

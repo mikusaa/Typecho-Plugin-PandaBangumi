@@ -44,6 +44,7 @@
 * 修复：[封面隐私] 修复缓存模式可能泄露 API 镜像或图片源地址的问题，下载失败时不再跳转外部图片。
 * 修复：[封面缓存] 覆盖 Typecho 登录会话预先写入的 `no-cache/no-store` 响应头，避免登录用户重复下载封面。
 * 修复：[条目信息] 修复书籍、游戏进度和评分展示中的类型差异，游戏不再伪造动画式进度。
+* 修复：[收藏状态] 书籍改用 `reading/read`、游戏改用 `playing/played`、音乐改用 `listening/listened`，动画和三次元继续使用 `watching/watched`。
 * 移除：[旧版配置] 删除 `ProxyImages` 和 `CacheCollectionImages` 配置兼容，旧版本跨版本升级需先卸载旧插件，再安装并重新配置。
 * 移除：[缓存迁移] 删除旧 `json/` 缓存目录迁移逻辑，新版只读取 `cache/data/`、`cache/subjects/` 和 `cache/covers/`。
 * 移除：[前端兼容] 删除旧全局入口 `window.initCollection()`，主题自定义回调应改用 `window.PandaBangumi.init()`。
@@ -51,7 +52,7 @@
 * 移除：[Subject 卡片] 删除对 VOID 正文容器 `.yue`、旧内部卡片类和全局图标类的依赖，改用组件命名空间及可覆盖 CSS 变量。
 * 移除：[API 设置] 页面不再注入 `window.bgmApiBase`，浏览器端只保留本站接口地址 `window.bgmBase`。
 
-注意，以上内容当前使用 `3.0.2.16` 测试版本验证，尚未作为 3.0.3 正式发布或打标签。
+注意，以上内容当前使用 `3.0.2.17` 测试版本验证，尚未作为 3.0.3 正式发布或打标签。
 
 **🍰 2026-03-07 Version 3.0.2**
 

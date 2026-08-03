@@ -23,6 +23,13 @@ class BangumiAPI
         'game' => 4,
         'real' => 6
     );
+    private const COLLECTION_LIST_TYPES = array(
+        'anime' => array('watching', 'watched'),
+        'real' => array('watching', 'watched'),
+        'book' => array('reading', 'read'),
+        'game' => array('playing', 'played'),
+        'music' => array('listening', 'listened')
+    );
 
     private static ?PluginConfig $config = null;
     private static ?HttpClient $httpClient = null;
@@ -54,13 +61,17 @@ class BangumiAPI
             self::config(),
             self::cacheStore(),
             self::COLLECTION_SUBJECT_TYPES,
+            self::COLLECTION_LIST_TYPES,
             self::COLLECTION_CACHE_VARIANT
         );
     }
 
     private static function requestParameters(): RequestParameters
     {
-        return self::$requestParameters ??= new RequestParameters(self::COLLECTION_SUBJECT_TYPES);
+        return self::$requestParameters ??= new RequestParameters(
+            self::COLLECTION_SUBJECT_TYPES,
+            self::COLLECTION_LIST_TYPES
+        );
     }
 
     private static function collectionService(): CollectionService
@@ -71,6 +82,7 @@ class BangumiAPI
             self::cacheStore(),
             self::coverService(),
             self::COLLECTION_SUBJECT_TYPES,
+            self::COLLECTION_LIST_TYPES,
             self::COLLECTION_CACHE_VARIANT
         );
     }
@@ -113,6 +125,16 @@ class BangumiAPI
         return $json === false ? '[]' : $json;
     }
 
+    public static function isCollectionType(string $type): bool
+    {
+        foreach (self::COLLECTION_LIST_TYPES as $types) {
+            if (in_array($type, $types, true)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     public static function curlFileGetContents(string $url): bool|string
     {
         return self::httpClient()->get($url);
@@ -142,32 +164,23 @@ class BangumiAPI
         return self::subjectService()->update($subjectId, $validTimeSpan);
     }
 
-    public static function updateWatchedCacheAndReturn(
+    public static function updateCollectionCacheAndReturn(
         string $userId,
         int $pageSize,
         int $from,
         int $validTimeSpan
     ): string {
-        return self::collectionService()->update(
-            $userId,
-            'watched',
-            self::requestParameters()->category($_GET),
-            $pageSize,
-            $from,
-            $validTimeSpan
-        );
-    }
+        $parameters = self::requestParameters();
+        $category = $parameters->category($_GET);
+        $list = $parameters->collectionList($_GET);
+        if ($category === '' || $list === '') {
+            return self::encodeJson(array());
+        }
 
-    public static function updateWatchingCacheAndReturn(
-        string $userId,
-        int $pageSize,
-        int $from,
-        int $validTimeSpan
-    ): string {
         return self::collectionService()->update(
             $userId,
-            'watching',
-            self::requestParameters()->category($_GET),
+            $list,
+            $category,
             $pageSize,
             $from,
             $validTimeSpan

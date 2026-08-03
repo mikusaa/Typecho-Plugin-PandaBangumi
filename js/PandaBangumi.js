@@ -98,6 +98,38 @@ function normalizeCollectionCategory(value) {
     return ['book', 'anime', 'music', 'game', 'real'].includes(cate) ? cate : 'anime';
 }
 
+var PandaBangumiCollectionTypes = {
+    anime: ['watching', 'watched'],
+    real: ['watching', 'watched'],
+    book: ['reading', 'read'],
+    game: ['playing', 'played'],
+    music: ['listening', 'listened']
+};
+
+/**
+ * 按条目分类标准化收藏状态名
+ * @param {string} value
+ * @param {string} cate
+ * @returns {'watching'|'watched'|'reading'|'read'|'playing'|'played'|'listening'|'listened'}
+ */
+function normalizeCollectionType(value, cate) {
+    const category = normalizeCollectionCategory(cate);
+    const types = PandaBangumiCollectionTypes[category];
+    const type = String(value || '').toLowerCase();
+    return types.includes(type) ? type : types[0];
+}
+
+/**
+ * 判断收藏状态是否为已完成
+ * @param {string} type
+ * @param {string} cate
+ * @returns {boolean}
+ */
+function isCompletedCollectionType(type, cate) {
+    const category = normalizeCollectionCategory(cate);
+    return normalizeCollectionType(type, category) === PandaBangumiCollectionTypes[category][1];
+}
+
 /**
  * 构造本站日历封面地址
  * @param {object} item
@@ -126,7 +158,7 @@ function buildCollectionCoverUrl(item, list, cate) {
     const subjectId = Number(item && item.id);
     const version = String(item && item.cover_version || '');
     const normalizedCate = normalizeCollectionCategory(cate);
-    const normalizedList = list === 'watched' ? 'watched' : list === 'watching' ? 'watching' : '';
+    const normalizedList = normalizeCollectionType(list, normalizedCate);
     const base = String(window.bgmBase || '');
     if (
         !Number.isInteger(subjectId)
@@ -397,7 +429,7 @@ function createPosterCard(item, options) {
     title.textContent = displayName;
 
     const score = Number(item.score || 0);
-    if (type === 'watched' && Number.isFinite(score) && score > 0) {
+    if (isCompletedCollectionType(type, cate) && Number.isFinite(score) && score > 0) {
         const scoreEl = document.createElement('span');
         scoreEl.className = 'bgm-poster-card__score';
         scoreEl.textContent = `★ ${score.toFixed(1)}`;
@@ -410,7 +442,7 @@ function createPosterCard(item, options) {
     const current = isBook ? Math.max(0, Number(item.vol_status || 0)) : epStatus;
     const totalCount = isBook ? Math.max(0, Number(item.vol_count || 0)) : count;
     const hasProgress = !isBook || current > 0 || totalCount > 0;
-    if (type === 'watching' && cate !== 'game' && hasProgress) {
+    if (!isCompletedCollectionType(type, cate) && cate !== 'game' && hasProgress) {
         const total = totalCount > 0 ? String(totalCount) : '未知';
         const unit = isBook ? ' 册' : isMusic ? ' 曲' : '';
         const progressText = document.createElement('span');
@@ -514,8 +546,8 @@ async function loadMoreBgm(action) {
         offset = 0;
     }
 
-    const type = listEl.dataset.type === 'watched' ? 'watched' : 'watching';
     const cate = normalizeCollectionCategory(listEl.dataset.cate);
+    const type = normalizeCollectionType(listEl.dataset.type, cate);
     const url = `${window.bgmBase}?from=${String(offset)}&type=${type}&cate=${cate}`;
     const controller = createRequestController();
 
@@ -1149,6 +1181,7 @@ async function initCollection() {
         item.dataset.bgmInitialized = '1';
         item.dataset.bgmOffset = '0';
         item.dataset.cate = normalizeCollectionCategory(item.dataset.cate);
+        item.dataset.type = normalizeCollectionType(item.dataset.type, item.dataset.cate);
 
         const action = createCollectionActionButton();
         item.appendChild(action);

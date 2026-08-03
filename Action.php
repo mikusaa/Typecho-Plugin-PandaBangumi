@@ -51,7 +51,8 @@ class Action extends Contents implements ActionInterface
     public function action(): void
     {
         $type = strtolower((string)($_GET['type'] ?? ''));
-        if (!in_array($type, ['watching', 'watched', 'calendar', 'subject', 'cover'], true)) {
+        $isCollection = BangumiAPI::isCollectionType($type);
+        if (!$isCollection && !in_array($type, ['calendar', 'subject', 'cover'], true)) {
             header("Content-Type: application/json; charset=UTF-8");
             echo BangumiAPI::encodeJson(array());
             exit;
@@ -129,10 +130,8 @@ class Action extends Contents implements ActionInterface
         }
 
         $pageSize = $From <= 0 ? self::COLLECTION_FIRST_PAGE_SIZE : self::COLLECTION_PAGE_SIZE;
-        if ($type == 'watching')
-            echo BangumiAPI::updateWatchingCacheAndReturn($ID, $pageSize, $From, $ValidTimeSpan);
-        elseif ($type == 'watched')
-            echo BangumiAPI::updateWatchedCacheAndReturn($ID, $pageSize, $From, $ValidTimeSpan);
+        if ($isCollection)
+            echo BangumiAPI::updateCollectionCacheAndReturn($ID, $pageSize, $From, $ValidTimeSpan);
         elseif ($type == 'calendar')
             echo BangumiAPI::updateCalendarCacheAndReturn($ID, $ValidTimeSpan);
     }

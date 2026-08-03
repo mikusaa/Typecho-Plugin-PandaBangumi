@@ -37,19 +37,19 @@
 在读书籍（Bangumi 的 `book` 分类同时包含小说和漫画）
 
 ```html
-<div data-type="watching" data-cate="book" class="bgm-collection"></div>
+<div data-type="reading" data-cate="book" class="bgm-collection"></div>
 ```
 
 在玩游戏
 
 ```html
-<div data-type="watching" data-cate="game" class="bgm-collection"></div>
+<div data-type="playing" data-cate="game" class="bgm-collection"></div>
 ```
 
 在听音乐（音乐收藏使用方形封面，进度单位为曲目）
 
 ```html
-<div data-type="watching" data-cate="music" class="bgm-collection"></div>
+<div data-type="listening" data-cate="music" class="bgm-collection"></div>
 ```
 
 已看动画
@@ -67,19 +67,19 @@
 读过书籍
 
 ```html
-<div data-type="watched" data-cate="book" class="bgm-collection"></div>
+<div data-type="read" data-cate="book" class="bgm-collection"></div>
 ```
 
 玩过游戏
 
 ```html
-<div data-type="watched" data-cate="game" class="bgm-collection"></div>
+<div data-type="played" data-cate="game" class="bgm-collection"></div>
 ```
 
 听过音乐
 
 ```html
-<div data-type="watched" data-cate="music" class="bgm-collection"></div>
+<div data-type="listened" data-cate="music" class="bgm-collection"></div>
 ```
 
 追番日历（去掉`data-filter="watching"`则显示所有番剧）

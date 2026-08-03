@@ -49,6 +49,13 @@ namespace {
     require dirname(__DIR__) . '/BangumiAPI.php';
 
     const SUBJECT_TYPES = array('book' => 1, 'anime' => 2, 'music' => 3, 'game' => 4, 'real' => 6);
+    const LIST_TYPES = array(
+        'anime' => array('watching', 'watched'),
+        'real' => array('watching', 'watched'),
+        'book' => array('reading', 'read'),
+        'game' => array('playing', 'played'),
+        'music' => array('listening', 'listened')
+    );
     const COLLECTION_VARIANT = 'category-v3';
     const CALENDAR_VARIANT = 'images-v2';
 
@@ -123,7 +130,7 @@ namespace {
 
     function coverService(PluginConfig $config, CacheStore $cacheStore): CoverService
     {
-        return new CoverService($config, $cacheStore, SUBJECT_TYPES, COLLECTION_VARIANT);
+        return new CoverService($config, $cacheStore, SUBJECT_TYPES, LIST_TYPES, COLLECTION_VARIANT);
     }
 
     function collectionService(
@@ -138,6 +145,7 @@ namespace {
             $cacheStore,
             $coverService,
             SUBJECT_TYPES,
+            LIST_TYPES,
             COLLECTION_VARIANT
         );
     }
@@ -165,10 +173,24 @@ namespace {
     });
 
     $test('Request parameter normalization', static function (): void {
-        $parameters = new RequestParameters(SUBJECT_TYPES);
+        $parameters = new RequestParameters(SUBJECT_TYPES, LIST_TYPES);
+        foreach (array_merge(...array_values(LIST_TYPES)) as $type) {
+            assertSameValue(true, BangumiAPI::isCollectionType($type));
+        }
+        assertSameValue(false, BangumiAPI::isCollectionType('completed'));
         assertSameValue('game', $parameters->category(array('cate' => 'GAME')));
         assertSameValue('music', $parameters->category(array('cate' => 'music')));
         assertSameValue('', $parameters->category(array('cate' => 'podcast')));
+        assertSameValue('watching', $parameters->collectionList(array('type' => 'watching', 'cate' => 'anime')));
+        assertSameValue('watched', $parameters->collectionList(array('type' => 'watched', 'cate' => 'real')));
+        assertSameValue('reading', $parameters->collectionList(array('type' => 'reading', 'cate' => 'book')));
+        assertSameValue('read', $parameters->collectionList(array('type' => 'read', 'cate' => 'book')));
+        assertSameValue('playing', $parameters->collectionList(array('type' => 'playing', 'cate' => 'game')));
+        assertSameValue('played', $parameters->collectionList(array('type' => 'played', 'cate' => 'game')));
+        assertSameValue('listening', $parameters->collectionList(array('type' => 'listening', 'cate' => 'music')));
+        assertSameValue('listened', $parameters->collectionList(array('type' => 'listened', 'cate' => 'music')));
+        assertSameValue('', $parameters->collectionList(array('type' => 'watching', 'cate' => 'music')));
+        assertSameValue('', $parameters->collectionList(array('type' => 'watched', 'cate' => 'book')));
         assertSameValue('watching', $parameters->calendarFilter(array('filter' => 'watching')));
         assertSameValue('all', $parameters->calendarFilter(array('filter' => 'unexpected')));
     });
@@ -231,8 +253,11 @@ namespace {
             assertSameValue(2, $page['next_offset']);
             assertSameValue(true, $page['has_more']);
             assertSameValue('https://bgm.tv/anime/list/test%20user/do', $service->moreUrl('test user', 'watching', 'anime'));
-            assertSameValue('https://bgm.tv/music/list/test/do', $service->moreUrl('test', 'watching', 'music'));
-            assertSameValue('', $service->moreUrl('test', 'watching', 'podcast'));
+            assertSameValue('https://bgm.tv/book/list/test/do', $service->moreUrl('test', 'reading', 'book'));
+            assertSameValue('https://bgm.tv/game/list/test/collect', $service->moreUrl('test', 'played', 'game'));
+            assertSameValue('https://bgm.tv/music/list/test/do', $service->moreUrl('test', 'listening', 'music'));
+            assertSameValue('https://bgm.tv/music/list/test/collect', $service->moreUrl('test', 'listened', 'music'));
+            assertSameValue('', $service->moreUrl('test', 'listening', 'podcast'));
         } finally {
             removeTestDirectory($directory);
         }
@@ -342,11 +367,26 @@ namespace {
                 $cacheStore,
                 coverService($pluginConfig, $cacheStore)
             );
-            $musicService->update('tester', 'watching', 'music', 1, 0, 60);
+            $musicService->update('tester', 'listening', 'music', 1, 0, 60);
             assertSameValue(
                 'https://api.bgm.tv/v0/users/tester/collections?subject_type=3&type=3&limit=30&offset=0',
                 $musicHttp->urls[0]
             );
+            assertTrueValue(is_file($cacheStore->dataPath('listening-music.json')));
+
+            $listenedHttp = new FakeHttpTransport(array(fixture('collection-response.json')));
+            $listenedService = collectionService(
+                $pluginConfig,
+                $listenedHttp,
+                $cacheStore,
+                coverService($pluginConfig, $cacheStore)
+            );
+            $listenedService->update('tester', 'listened', 'music', 1, 0, 60);
+            assertSameValue(
+                'https://api.bgm.tv/v0/users/tester/collections?subject_type=3&type=2&limit=30&offset=0',
+                $listenedHttp->urls[0]
+            );
+            assertTrueValue(is_file($cacheStore->dataPath('listened-music.json')));
         } finally {
             removeTestDirectory($directory);
         }

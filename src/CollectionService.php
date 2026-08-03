@@ -13,6 +13,7 @@ final class CollectionService
         private CacheStore $cacheStore,
         private CoverService $coverService,
         private array $subjectTypes,
+        private array $listTypes,
         private string $cacheVariant
     ) {
     }
@@ -166,7 +167,7 @@ final class CollectionService
         if ($userId === '' || !array_key_exists($category, $this->subjectTypes)) {
             return '';
         }
-        $status = $type === 'watched' ? 'collect' : 'do';
+        $status = ($this->listTypes[$category][1] ?? '') === $type ? 'collect' : 'do';
         return 'https://bgm.tv/' . $category . '/list/' . rawurlencode($userId) . '/' . $status;
     }
 
@@ -193,7 +194,7 @@ final class CollectionService
         int $from,
         int $validTimeSpan
     ): string {
-        $status = $type === 'watched' ? 2 : 3;
+        $status = ($this->listTypes[$category][1] ?? '') === $type ? 2 : 3;
         $cache = $this->categoryCache($userId, $status, $type, $category, $validTimeSpan);
         $page = $this->page(
             $cache['data'],
