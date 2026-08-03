@@ -32,6 +32,7 @@ vm.runInContext(source, sandbox, { filename: 'PandaBangumi.js' });
 const normalize = vm.runInContext('normalizeSubjectCardData', sandbox);
 const normalizeCollection = vm.runInContext('normalizeCollectionType', sandbox);
 const isCompletedCollection = vm.runInContext('isCompletedCollectionType', sandbox);
+const shouldShowProgress = vm.runInContext('shouldShowPosterProgress', sandbox);
 const pickMusicObiColor = vm.runInContext('pickMusicObiColor', sandbox);
 const hslToRgb = vm.runInContext('hslToRgb', sandbox);
 const relativeLuminance = vm.runInContext('relativeLuminance', sandbox);
@@ -128,4 +129,9 @@ Object.entries(collectionTypes).forEach(([category, [active, completed]]) => {
     assert.equal(isCompletedCollection(completed, category), true);
 });
 
-process.stdout.write('7 subject card fixtures, 10 collection type mappings, and 3 palette checks passed\n');
+assert.equal(shouldShowProgress('calendar', 'anime', true), false);
+assert.equal(shouldShowProgress('watching', 'anime', true), true);
+assert.equal(shouldShowProgress('watched', 'anime', true), false);
+assert.equal(shouldShowProgress('playing', 'game', true), false);
+
+process.stdout.write('7 subject card fixtures, 10 collection type mappings, 4 progress cases, and 3 palette checks passed\n');

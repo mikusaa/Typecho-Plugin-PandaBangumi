@@ -385,6 +385,20 @@ async function fetchJson(url, signal) {
 }
 
 /**
+ * 判断封面卡片是否展示收藏进度。
+ * @param {string} type
+ * @param {string} cate
+ * @param {boolean} hasProgress
+ * @returns {boolean}
+ */
+function shouldShowPosterProgress(type, cate, hasProgress) {
+    return type !== 'calendar'
+        && !isCompletedCollectionType(type, cate)
+        && cate !== 'game'
+        && hasProgress;
+}
+
+/**
  * 创建通用封面卡片
  * @param {object} item
  * @param {{type: string, cate?: string, imageUrl?: string}} options
@@ -443,7 +457,7 @@ function createPosterCard(item, options) {
     const current = isBook ? Math.max(0, Number(item.vol_status || 0)) : epStatus;
     const totalCount = isBook ? Math.max(0, Number(item.vol_count || 0)) : count;
     const hasProgress = !isBook || current > 0 || totalCount > 0;
-    if (!isCompletedCollectionType(type, cate) && cate !== 'game' && hasProgress) {
+    if (shouldShowPosterProgress(type, cate, hasProgress)) {
         const total = totalCount > 0 ? String(totalCount) : '未知';
         const unit = isBook ? ' 册' : isMusic ? ' 曲' : '';
         const progressText = document.createElement('span');
