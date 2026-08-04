@@ -92,6 +92,7 @@ final class SubjectService
                                     ? $stored
                                     : array('time' => 1, 'subject_id' => $subjectId, 'data' => array());
                                 $cache = $this->cacheStore->deferRefresh($filePath, $fallback);
+                                $this->cacheStore->pruneSubjectCaches($subjectId);
                             }
                         }
                     }

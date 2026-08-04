@@ -755,6 +755,8 @@ namespace {
 
     $test('Subject cache pruning preserves current entry', static function (): void {
         $directory = testDirectory();
+        $lock = null;
+        $temporary = '';
         try {
             $cacheStore = new CacheStore($directory);
             for ($id = 1; $id <= 258; $id++) {
@@ -762,12 +764,70 @@ namespace {
                 $cacheStore->write($path, array('time' => $id, 'subject_id' => $id, 'data' => array('id' => $id)));
                 touch($path, 1000 + $id);
             }
+
+            $temporary = (string)tempnam($cacheStore->directory('subjects'), 'pb_');
+            assertTrueValue($temporary !== '');
+            file_put_contents($temporary, 'in progress', LOCK_EX);
+            $lock = $cacheStore->acquireShardLock('subject', 'prune-safety');
+            assertTrueValue(is_resource($lock));
+            $lockFiles = glob($cacheStore->directory('locks') . '/subject-*.lock');
+            assertTrueValue(is_array($lockFiles) && count($lockFiles) > 0);
+
             $cacheStore->pruneSubjectCaches(258, 256);
             $files = glob($cacheStore->directory('subjects') . '/[0-9]*.php');
             assertSameValue(256, is_array($files) ? count($files) : 0);
             assertTrueValue(is_file($cacheStore->subjectPath(258)));
             assertSameValue(false, is_file($cacheStore->subjectPath(1)));
             assertSameValue(false, is_file($cacheStore->subjectPath(2)));
+            assertTrueValue(is_file($temporary));
+            foreach ($lockFiles as $lockFile) {
+                assertTrueValue(is_file($lockFile));
+            }
+        } finally {
+            if (is_resource($lock)) {
+                $cacheStore->releaseRefreshLock($lock);
+            }
+            removeTestDirectory($directory);
+        }
+    });
+
+    $test('Failed Subject refreshes stay within shared cache limit', static function (): void {
+        $directory = testDirectory();
+        try {
+            $pluginConfig = config(array('ImageMode' => 'cache'));
+            $cacheStore = new CacheStore($directory, static fn(): int => 1000);
+            $cover = coverService($pluginConfig, $cacheStore);
+            $failed = new SubjectService(
+                $pluginConfig,
+                new FakeHttpTransport(array_fill(0, 300, false)),
+                $cacheStore,
+                $cover
+            );
+            $temporary = (string)tempnam($cacheStore->directory('subjects'), 'pb_');
+            assertTrueValue($temporary !== '');
+            file_put_contents($temporary, 'in progress', LOCK_EX);
+
+            for ($id = 1000; $id < 1300; $id++) {
+                assertSameValue(array(), json_decode($failed->update($id, 60), true));
+            }
+
+            $files = glob($cacheStore->directory('subjects') . '/[0-9]*.php');
+            assertSameValue(256, is_array($files) ? count($files) : 0);
+            assertTrueValue(is_file($cacheStore->subjectPath(1299)));
+            assertTrueValue(is_file($temporary));
+
+            $successful = new SubjectService(
+                $pluginConfig,
+                new FakeHttpTransport(array(fixture('subject-response.json'))),
+                $cacheStore,
+                $cover
+            );
+            assertSameValue(101, json_decode($successful->update(101, 60), true)['id']);
+
+            $files = glob($cacheStore->directory('subjects') . '/[0-9]*.php');
+            assertSameValue(256, is_array($files) ? count($files) : 0);
+            assertTrueValue(is_file($cacheStore->subjectPath(101)));
+            assertTrueValue(is_file($temporary));
         } finally {
             removeTestDirectory($directory);
         }
