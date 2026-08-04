@@ -1,0 +1,62 @@
+.pb-settings-snippets {
+    margin: 1.5em 0;
+}
+
+.pb-settings-snippets > summary {
+    line-height: 25px;
+}
+
+.pb-settings-snippets > summary::-webkit-details-marker {
+    display: none;
+}
+
+.pb-settings-snippets[open] > summary .i-caret-down {
+    display: inline-block;
+    transform: rotate(180deg);
+}
+
+.pb-snippets-body {
+    margin-top: .5em;
+}
+
+.pb-snippet-controls {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: .5em 1em;
+    margin-bottom: .5em;
+}
+
+.pb-snippet-controls label {
+    white-space: nowrap;
+}
+
+.pb-snippet-output {
+    display: flex;
+    gap: .5em;
+}
+
+.pb-snippet-output .text {
+    min-width: 0;
+    flex: 1;
+}
+
+.pb-subject-controls > #pb-subject-id {
+    width: 10em;
+    margin-bottom: .5em;
+}
+
+.pb-copy-status:empty {
+    display: none;
+}
+
+@media (max-width: 575px) {
+    .pb-snippet-output {
+        align-items: stretch;
+        flex-direction: column;
+    }
+
+    .pb-snippet-output .btn {
+        align-self: flex-start;
+    }
+}

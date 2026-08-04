@@ -7,6 +7,7 @@ use Typecho\Plugin\Exception as PluginException;
 use Typecho\Widget\Helper\Form;
 use Typecho\Widget\Helper\Form\Element\Radio;
 use Typecho\Widget\Helper\Form\Element\Text;
+use Typecho\Widget\Helper\Layout;
 use Widget\Options;
 use Utils\Helper;
 
@@ -88,37 +89,72 @@ class Plugin implements PluginInterface
      */
     public static function config(Form $form): void
     {
-        echo '作者：<a href="https://www.imalan.cn">熊猫小A</a>，插件介绍页：<a href="https://www.himiku.com/archives/pandabangumi.html">PandaBangumi 插件介绍与使用说明</a><br>';
-        echo '<br><strong>使用方法，在文章要插入的地方写：</strong><br>';
-        echo htmlspecialchars('在看动画：<div data-type="watching" data-cate="anime" class="bgm-collection"></div>');
-        echo '<br>';
-        echo htmlspecialchars('在看三次元：<div data-type="watching" data-cate="real" class="bgm-collection"></div>');
-        echo '<br>';
-        echo htmlspecialchars('在读书籍：<div data-type="reading" data-cate="book" class="bgm-collection"></div>');
-        echo '<br>';
-        echo htmlspecialchars('在玩游戏：<div data-type="playing" data-cate="game" class="bgm-collection"></div>');
-        echo '<br>';
-        echo htmlspecialchars('在听音乐：<div data-type="listening" data-cate="music" class="bgm-collection"></div>');
-        echo '<br>';
-        echo htmlspecialchars('已看动画：<div data-type="watched" data-cate="anime" class="bgm-collection"></div>');
-        echo '<br>';
-        echo htmlspecialchars('已看三次元：<div data-type="watched" data-cate="real" class="bgm-collection"></div>');
-        echo '<br>';
-        echo htmlspecialchars('读过书籍：<div data-type="read" data-cate="book" class="bgm-collection"></div>');
-        echo '<br>';
-        echo htmlspecialchars('玩过游戏：<div data-type="played" data-cate="game" class="bgm-collection"></div>');
-        echo '<br>';
-        echo htmlspecialchars('听过音乐：<div data-type="listened" data-cate="music" class="bgm-collection"></div>');
-        echo '<br>';
-        echo htmlspecialchars('追番日历：<div data-filter="watching" class="bgm-calendar"></div>');
-        echo '<br>';
-        echo htmlspecialchars('Bangumi 条目卡片：<div class="bgm-card" data-id="Subject ID"></div>');
-        echo '<br>';
+        $version = htmlspecialchars(PandaBangumi_Plugin_VERSION, ENT_QUOTES, 'UTF-8');
+        $adminVersion = $version . '.3';
+        $adminCss = htmlspecialchars(self::pluginAssetUrl('css/PandaBangumiAdmin.css'), ENT_QUOTES, 'UTF-8');
+        $adminJs = htmlspecialchars(self::pluginAssetUrl('js/PandaBangumiAdmin.js'), ENT_QUOTES, 'UTF-8');
 
-        $ID = new Text('ID', NULL, '', _t('用户 ID'), _t('填写 Bangumi 主页链接 /user/ 后面的用户名或数字 ID。'));
+        echo '<link rel="stylesheet" href="' . $adminCss . '?v=' . $adminVersion . '">';
+        echo '<script defer src="' . $adminJs . '?v=' . $adminVersion . '"></script>';
+        echo '作者：<a href="https://www.imalan.cn">熊猫小A</a>，插件介绍页：<a href="https://www.himiku.com/archives/pandabangumi.html">PandaBangumi 插件介绍与使用说明</a><br>';
+
+        $snippets = new Layout('details', ['class' => 'pb-settings-snippets']);
+        $snippets->html(<<<'HTML'
+<summary class="btn btn-xs">插入代码速查 <i class="i-caret-down" aria-hidden="true"></i></summary>
+<div class="pb-snippets-body">
+    <ul class="typecho-option">
+        <li>
+            <label class="typecho-label">收藏列表</label>
+            <div class="pb-snippet-controls">
+                <label>内容类型 <select id="pb-snippet-category"><option value="anime">动画</option><option value="real">三次元</option><option value="book">书籍</option><option value="game">游戏</option><option value="music">音乐</option></select></label>
+                <label>收藏状态 <select id="pb-snippet-status"></select></label>
+            </div>
+            <div class="pb-snippet-output"><input id="pb-collection-code" class="text" type="text" readonly><button class="btn" type="button" data-copy-target="pb-collection-code">复制</button></div>
+        </li>
+    </ul>
+    <ul class="typecho-option">
+        <li>
+            <label class="typecho-label">追番日历</label>
+            <div class="pb-snippet-controls">
+                <label>展示范围 <select id="pb-calendar-filter"><option value="watching">仅在看</option><option value="all">全部番剧</option></select></label>
+            </div>
+            <div class="pb-snippet-output"><input id="pb-calendar-code" class="text" type="text" readonly><button class="btn" type="button" data-copy-target="pb-calendar-code">复制</button></div>
+        </li>
+    </ul>
+    <ul class="typecho-option">
+        <li>
+            <label class="typecho-label" for="pb-subject-id">Bangumi 条目卡片</label>
+            <div class="pb-subject-controls"><input id="pb-subject-id" class="text" type="text" inputmode="numeric" placeholder="subject id"><div class="pb-snippet-output"><input id="pb-card-code" class="text" type="text" readonly><button class="btn" type="button" data-copy-target="pb-card-code">复制</button></div></div>
+            <p class="description pb-copy-status" aria-live="polite"></p>
+        </li>
+    </ul>
+</div>
+HTML);
+        $form->addItem($snippets);
+
+        $ID = new Text('ID', null, '', _t('用户 ID'), _t('Bangumi 主页地址中 /user/ 后面的用户名或数字 ID。'));
+        $ID->addRule('required', _t('请填写 Bangumi 用户 ID。'));
         $form->addInput($ID);
 
-        $ApiBase = new Text('ApiBase', NULL, '', _t('Bangumi API 镜像'), _t('只填写等价于 https://api.bgm.tv 的 HTTPS 镜像域名，例如 https://example.com；不要带 /v0 或其他路径，路径会被自动忽略。留空则使用官方 API，HTTP 地址会被忽略。'));
+        $ApiBase = new Text('ApiBase', null, '', _t('Bangumi API 镜像'), _t('填写等价于 https://api.bgm.tv 的 HTTPS 地址，不要附加 /v0 等路径；留空使用官方 API。'));
+        $ApiBase->addRule(
+            static function ($value): bool {
+                $value = trim((string)$value);
+                if ($value === '') {
+                    return true;
+                }
+                $parts = parse_url($value);
+                return is_array($parts)
+                    && strtolower((string)($parts['scheme'] ?? '')) === 'https'
+                    && !empty($parts['host'])
+                    && !isset($parts['user'])
+                    && !isset($parts['pass'])
+                    && !isset($parts['query'])
+                    && !isset($parts['fragment'])
+                    && (!isset($parts['path']) || $parts['path'] === '' || $parts['path'] === '/');
+            },
+            _t('请填写不带路径的 HTTPS API 镜像地址。')
+        );
         $form->addInput($ApiBase);
 
         $ImageMode = new Radio(
@@ -129,15 +165,35 @@ class Plugin implements PluginInterface
             ),
             'direct',
             _t('封面加载方式'),
-            _t('直接加载会原样使用 API 返回的图片地址；使用镜像时，建议由镜像代理图片并改写 JSON。本站缓存会隐藏图片来源，并应用于日历、收藏列表和单部条目卡片。')
+            _t('访客浏览器直接请求 API 返回的图片地址。')
         );
         $form->addInput($ImageMode);
 
-        $ValidTimeSpan = new Text('ValidTimeSpan', NULL, '86400', _t('数据刷新间隔'), _t('设置 JSON 数据重新请求 Bangumi API 的间隔，单位为秒，默认 24 小时，最低 300 秒。'));
+        $ValidTimeSpan = new Text('ValidTimeSpan', null, '86400', _t('数据刷新间隔'), _t('最低 300 秒。'));
+        $ValidTimeSpan->addRule('required', _t('请填写数据刷新间隔。'));
+        $ValidTimeSpan->addRule('isInteger', _t('数据刷新间隔必须是整数。'));
+        $ValidTimeSpan->addRule(
+            static fn($value): bool => (int)$value >= 300,
+            _t('数据刷新间隔不能低于 300 秒。')
+        );
         $form->addInput($ValidTimeSpan);
 
-        $Limit = new Text('Limit', NULL, '30', _t('收藏列表数量上限'), _t('限制本站各分类的在看和已看列表，每类严格展示 0–300 条；追番日历使用独立的在看集合，不受此项限制。'));
+        $Limit = new Text('Limit', null, '30', _t('收藏列表数量上限'), _t('每类可展示 0–300 条；追番日历使用独立的在看集合，不受此项限制。'));
+        $Limit->addRule('required', _t('请填写收藏列表数量上限。'));
+        $Limit->addRule('isInteger', _t('收藏列表数量上限必须是整数。'));
+        $Limit->addRule(
+            static fn($value): bool => (int)$value >= 0 && (int)$value <= 300,
+            _t('收藏列表数量上限必须在 0–300 之间。')
+        );
         $form->addInput($Limit);
+
+    }
+
+    private static function pluginAssetUrl(string $path): string
+    {
+        ob_start();
+        Options::alloc()->pluginUrl('/PandaBangumi/' . ltrim($path, '/'));
+        return (string)ob_get_clean();
     }
 
     /**
