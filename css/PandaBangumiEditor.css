@@ -1,0 +1,48 @@
+#wmd-pandabangumi-card-button .pb-editor-icon {
+    display: block;
+    width: 20px;
+    height: 20px;
+    object-fit: contain;
+}
+
+#wmd-pandabangumi-card-button:focus-visible {
+    outline: 2px solid #467b96;
+    outline-offset: 1px;
+}
+
+.pb-editor-panel .wmd-prompt-background {
+    position: fixed;
+    inset: 0;
+    z-index: 1000;
+    opacity: .5;
+}
+
+.pb-editor-panel .pb-editor-dialog {
+    margin: 0;
+    box-sizing: border-box;
+    transform: translate(-50%, -50%);
+}
+
+.pb-editor-panel .pb-editor-heading {
+    margin-bottom: .5em;
+    font-weight: bold;
+}
+
+.pb-editor-panel .pb-editor-description {
+    color: #777;
+}
+
+.pb-editor-panel .pb-editor-error {
+    min-height: 1.5em;
+    color: #b94a48;
+}
+
+.pb-editor-panel .pb-editor-actions {
+    margin-top: .5em;
+}
+
+@media (max-width: 575px) {
+    .pb-editor-panel .pb-editor-dialog {
+        width: calc(100% - 32px);
+    }
+}

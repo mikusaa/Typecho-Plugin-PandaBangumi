@@ -31,6 +31,7 @@ class Plugin implements PluginInterface
 {
     private static bool $headerInjected = false;
     private static bool $footerInjected = false;
+    private static bool $editorInjected = false;
 
     /**
      * 激活插件方法,如果激活失败,直接抛出异常
@@ -65,6 +66,8 @@ class Plugin implements PluginInterface
 
         \Typecho\Plugin::factory('Widget_Archive')->header = __CLASS__ . '::header';
         \Typecho\Plugin::factory('Widget_Archive')->footer = __CLASS__ . '::footer';
+        \Typecho\Plugin::factory('admin/write-post.php')->bottom = __CLASS__ . '::editor';
+        \Typecho\Plugin::factory('admin/write-page.php')->bottom = __CLASS__ . '::editor';
         Helper::addRoute("route_PandaBangumi", "/PandaBangumi", "PandaBangumi_Action", 'action');
     }
 
@@ -205,6 +208,25 @@ HTML);
      */
     public static function personalConfig(Form $form)
     {
+    }
+
+    /**
+     * 输出文章编辑器的条目卡片插入工具
+     */
+    public static function editor(): void
+    {
+        if (self::$editorInjected) {
+            return;
+        }
+        self::$editorInjected = true;
+
+        $version = htmlspecialchars(PandaBangumi_Plugin_VERSION . '.4', ENT_QUOTES, 'UTF-8');
+        $css = htmlspecialchars(self::pluginAssetUrl('css/PandaBangumiEditor.css'), ENT_QUOTES, 'UTF-8');
+        $js = htmlspecialchars(self::pluginAssetUrl('js/PandaBangumiEditor.js'), ENT_QUOTES, 'UTF-8');
+        $icon = htmlspecialchars(self::pluginAssetUrl('img/bangumi-editor.gif'), ENT_QUOTES, 'UTF-8');
+
+        echo '<link rel="stylesheet" href="' . $css . '?v=' . $version . '">';
+        echo '<script defer src="' . $js . '?v=' . $version . '" data-pb-editor-icon="' . $icon . '?v=' . $version . '"></script>';
     }
 
     /**
