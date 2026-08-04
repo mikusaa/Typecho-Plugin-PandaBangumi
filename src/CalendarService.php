@@ -4,6 +4,7 @@ namespace TypechoPlugin\PandaBangumi;
 
 final class CalendarService
 {
+    private const WATCHING_LIMIT = 120;
     private const EMPTY_CACHE = array('time' => 1, 'data' => array());
 
     public function __construct(
@@ -30,16 +31,16 @@ final class CalendarService
         return $cache;
     }
 
-    private function fetchRaw(): ?array
+    private function fetchRaw(): array
     {
         $json = $this->http->get($this->config->buildApiUrl('/calendar'));
         if ($json === false || $json === 'null') {
-            return null;
+            throw RefreshFailure::transient('PandaBangumi calendar request failed');
         }
 
         $data = json_decode($json, true);
         if (!is_array($data)) {
-            return null;
+            throw RefreshFailure::transient('PandaBangumi calendar response was invalid');
         }
 
         $calendar = array();
@@ -105,21 +106,33 @@ final class CalendarService
                     ));
                 }
                 throw $error;
+            } catch (RefreshFailure $error) {
+                if ($isCompatible($stored)) {
+                    return $this->normalize($this->cacheStore->deferRefresh(
+                        $filePath,
+                        $stored,
+                        $error->retryAfter()
+                    ));
+                }
+                throw $error;
             }
-            if ($raw !== null) {
-                $cache = array(
-                    'time' => $this->cacheStore->now(),
-                    'image_variant' => $this->imageVariant,
-                    'data' => $raw
-                );
-                $this->cacheStore->write($filePath, $cache);
-                return $cache;
+            $cache = array(
+                'time' => $this->cacheStore->now(),
+                'image_variant' => $this->imageVariant,
+                'data' => $raw
+            );
+            if (!$this->cacheStore->write($filePath, $cache)) {
+                $error = RefreshFailure::transient('PandaBangumi could not commit calendar cache');
+                if ($isCompatible($stored)) {
+                    return $this->normalize($this->cacheStore->deferRefresh(
+                        $filePath,
+                        $stored,
+                        $error->retryAfter()
+                    ));
+                }
+                throw $error;
             }
-
-            $fallback = $isCompatible($stored)
-                ? $stored
-                : array('time' => 1, 'image_variant' => $this->imageVariant, 'data' => array());
-            return $this->cacheStore->deferRefresh($filePath, $fallback);
+            return $cache;
         } finally {
             $this->cacheStore->releaseRefreshLock($lockHandle);
         }
@@ -140,15 +153,15 @@ final class CalendarService
             $userId,
             'watching',
             'anime',
-            CollectionService::MAX_FETCH_LIMIT,
+            self::WATCHING_LIMIT,
             $validTimeSpan
         );
 
         $calendar = array();
         foreach ($cache['data'] as $day) {
-            $items = array_filter($day['items'], static function ($item) use ($watchingIds): bool {
+            $items = array_values(array_filter($day['items'], static function ($item) use ($watchingIds): bool {
                 return in_array($item['id'], $watchingIds, true);
-            });
+            }));
             $calendar[] = array(
                 'id' => $day['id'],
                 'date_en' => $day['date_en'],

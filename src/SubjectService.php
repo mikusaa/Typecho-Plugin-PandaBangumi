@@ -43,6 +43,11 @@ final class SubjectService
                     || (
                         count($cache['data']) === 0
                         && (int)($cache['subject_id'] ?? 0) === $subjectId
+                        && in_array(
+                            (string)($cache['outcome'] ?? ''),
+                            array('not_found', 'refresh_failed'),
+                            true
+                        )
                     )
                 );
         };
@@ -62,6 +67,7 @@ final class SubjectService
                     $stored = $this->cacheStore->read($filePath);
                     $cache = $this->cacheStore->usable($filePath, $validTimeSpan, $stored, $isCompatible);
                     if ($cache === null) {
+                        $failure = null;
                         try {
                             $json = $this->http->get($this->config->buildApiUrl('/v0/subjects/' . $subjectId));
                         } catch (RateLimitExceeded $error) {
@@ -73,6 +79,19 @@ final class SubjectService
                                 );
                             } else {
                                 throw $error;
+                            }
+                            $json = false;
+                        } catch (RefreshFailure $error) {
+                            if ($isCompatible($stored) && $error->upstreamStatus() !== 404) {
+                                $cache = $this->cacheStore->deferRefresh(
+                                    $filePath,
+                                    $stored,
+                                    $error->retryAfter()
+                                );
+                            } else {
+                                $failure = $error->upstreamStatus() === 404
+                                    ? RefreshFailure::notFound()
+                                    : $error;
                             }
                             $json = false;
                         }
@@ -88,10 +107,31 @@ final class SubjectService
                                     $this->cacheStore->pruneSubjectCaches($subjectId);
                                 }
                             } else {
-                                $fallback = $isCompatible($stored)
-                                    ? $stored
-                                    : array('time' => 1, 'subject_id' => $subjectId, 'data' => array());
-                                $cache = $this->cacheStore->deferRefresh($filePath, $fallback);
+                                $failure ??= RefreshFailure::transient(
+                                    'PandaBangumi Subject response was invalid'
+                                );
+                                if ($isCompatible($stored) && $failure->status() !== 404) {
+                                    $cache = $this->cacheStore->deferRefresh(
+                                        $filePath,
+                                        $stored,
+                                        $failure->retryAfter()
+                                    );
+                                } elseif ($failure->status() === 404) {
+                                    $cache = array(
+                                        'time' => $this->cacheStore->now(),
+                                        'subject_id' => $subjectId,
+                                        'outcome' => 'not_found',
+                                        'data' => array()
+                                    );
+                                    $this->cacheStore->write($filePath, $cache);
+                                } else {
+                                    $cache = $this->cacheStore->deferRefresh($filePath, array(
+                                        'time' => 1,
+                                        'subject_id' => $subjectId,
+                                        'outcome' => 'refresh_failed',
+                                        'data' => array()
+                                    ), $failure->retryAfter());
+                                }
                                 $this->cacheStore->pruneSubjectCaches($subjectId);
                             }
                         }
@@ -103,9 +143,20 @@ final class SubjectService
         }
 
         $cache = $this->normalize($cache);
+        $outcome = (string)($cache['outcome'] ?? '');
+        if ($outcome === 'not_found') {
+            throw RefreshFailure::notFound();
+        }
+        if ($outcome === 'refresh_failed') {
+            throw RefreshFailure::transient(
+                'PandaBangumi Subject refresh is deferred',
+                0,
+                max(1, (int)($cache['retry_after'] ?? 0) - $this->cacheStore->now())
+            );
+        }
         $data = $cache['data'];
         if (!is_array($data) || (int)($data['id'] ?? 0) !== $subjectId) {
-            return $this->encode(array());
+            throw RefreshFailure::transient('PandaBangumi Subject response was invalid');
         }
 
         $this->coverService->maybeRunMaintenance();

@@ -4,7 +4,7 @@ namespace TypechoPlugin\PandaBangumi;
 
 final class CollectionService
 {
-    public const MAX_FETCH_LIMIT = 1000;
+    public const MAX_FETCH_LIMIT = 300;
 
     private const FETCH_PAGE_SIZE = 30;
     private const EMPTY_CACHE = array('time' => 1, 'data' => array());
@@ -29,17 +29,21 @@ final class CollectionService
     private function fetchRaw(string $userId, int $status, int $subjectType, int $fetchLimit): array
     {
         if ($userId === '') {
-            return array('data' => array(), 'complete' => true, 'successful' => true);
+            return array('data' => array(), 'complete' => true);
         }
         if ($fetchLimit <= 0) {
-            return array('data' => array(), 'complete' => false, 'successful' => true);
+            return array('data' => array(), 'complete' => false);
         }
 
         $offset = 0;
         $collections = array();
         $complete = false;
-        $successful = true;
+        $pages = 0;
+        $maxPages = (int)ceil($fetchLimit / self::FETCH_PAGE_SIZE);
         do {
+            if ($pages >= $maxPages) {
+                throw RefreshFailure::budgetExceeded();
+            }
             $url = $this->config->buildApiUrl('/v0/users/' . rawurlencode($userId) . '/collections')
                 . '?subject_type=' . $subjectType
                 . '&type=' . $status
@@ -47,18 +51,36 @@ final class CollectionService
                 . '&offset=' . $offset;
             $json = $this->http->get($url);
             if ($json === false || $json === 'null') {
-                $successful = false;
-                break;
+                throw RefreshFailure::transient('PandaBangumi collection request failed');
             }
 
             $data = json_decode($json, true);
-            if (!is_array($data) || !isset($data['total'], $data['data']) || !is_array($data['data'])) {
-                $successful = false;
-                break;
+            if (!is_array($data)
+                || !isset($data['total'], $data['limit'], $data['offset'], $data['data'])
+                || !is_int($data['total'])
+                || !is_int($data['limit'])
+                || !is_int($data['offset'])
+                || !is_array($data['data'])
+                || $data['total'] < 0
+                || $data['offset'] < 0
+            ) {
+                throw RefreshFailure::transient('PandaBangumi collection response was invalid');
             }
 
-            $total = max(0, (int)$data['total']);
-            $pageOffset = max(0, (int)($data['offset'] ?? $offset));
+            $responseTotal = $data['total'];
+            $pageOffset = $data['offset'];
+            if ($pageOffset !== $offset) {
+                throw RefreshFailure::transient('PandaBangumi collection response offset did not match');
+            }
+            $responseLimit = $data['limit'];
+            $pageCount = count($data['data']);
+            if ($responseLimit < 1
+                || $responseLimit > self::FETCH_PAGE_SIZE
+                || $pageCount > $responseLimit
+                || ($pageCount < $responseLimit && $pageOffset + $pageCount < $responseTotal)
+            ) {
+                throw RefreshFailure::transient('PandaBangumi collection response pagination was invalid');
+            }
             $processed = 0;
             foreach ($data['data'] as $item) {
                 $processed++;
@@ -82,27 +104,31 @@ final class CollectionService
                     'id' => $subjectId,
                 );
                 if (count($collections) >= $fetchLimit) {
-                    $complete = $pageOffset + $processed >= $total;
-                    break 2;
+                    $complete = $pageOffset + $processed >= $responseTotal;
+                    break;
                 }
             }
 
-            $responseLimit = max(1, (int)($data['limit'] ?? self::FETCH_PAGE_SIZE));
-            $offset = max($offset + $responseLimit, (int)($data['offset'] ?? $offset) + $responseLimit);
-            if ($offset >= $total) {
-                $complete = true;
+            $pages++;
+            if (count($collections) >= $fetchLimit) {
                 break;
             }
-            if (count($data['data']) === 0) {
-                $successful = false;
+            $offset = $pageOffset + $pageCount;
+            if ($offset >= $responseTotal) {
+                $complete = true;
+            }
+            if (count($data['data']) === 0 && !$complete) {
+                throw RefreshFailure::transient('PandaBangumi collection response stopped before total');
+            }
+
+            if ($complete) {
                 break;
             }
         } while (true);
 
         return array(
             'data' => array_slice($collections, 0, $fetchLimit),
-            'complete' => $complete,
-            'successful' => $successful
+            'complete' => $complete
         );
     }
 
@@ -183,6 +209,15 @@ final class CollectionService
                     ));
                 }
                 throw $error;
+            } catch (RefreshFailure $error) {
+                if ($hasCoverage($stored)) {
+                    return $this->normalize($this->cacheStore->deferRefresh(
+                        $filePath,
+                        $stored,
+                        $error->retryAfter()
+                    ));
+                }
+                throw $error;
             }
             $newCache = array(
                 'time' => $this->cacheStore->now(),
@@ -194,12 +229,17 @@ final class CollectionService
                 'data' => $result['data']
             );
 
-            if (!$result['successful']) {
-                $fallback = $isCompatible($stored) ? $stored : array_merge($newCache, array('time' => 1));
-                return $this->normalize($this->cacheStore->deferRefresh($filePath, $fallback));
+            if (!$this->cacheStore->write($filePath, $newCache)) {
+                $error = RefreshFailure::transient('PandaBangumi could not commit collection cache');
+                if ($hasCoverage($stored)) {
+                    return $this->normalize($this->cacheStore->deferRefresh(
+                        $filePath,
+                        $stored,
+                        $error->retryAfter()
+                    ));
+                }
+                throw $error;
             }
-
-            $this->cacheStore->write($filePath, $newCache);
             return $newCache;
         } finally {
             $this->cacheStore->releaseRefreshLock($lockHandle);

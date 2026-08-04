@@ -90,6 +90,30 @@ class Action extends Contents implements ActionInterface
         }
     }
 
+    private function sendRefreshFailureResponse(RefreshFailure $error): void
+    {
+        $payload = array('error' => $error->errorCode());
+        if ($error->retryAfter() > 0) {
+            $payload['retry_after'] = $error->retryAfter();
+        }
+        $body = BangumiAPI::encodeJson($payload);
+        if (defined('PANDABANGUMI_TESTING') && PANDABANGUMI_TESTING === true) {
+            http_response_code($error->status());
+            if ($error->retryAfter() > 0) {
+                header('Retry-After: ' . $error->retryAfter());
+            }
+            echo $body;
+            return;
+        }
+
+        $this->response->setStatus($error->status());
+        if ($error->retryAfter() > 0) {
+            $this->response->setHeader('Retry-After', (string)$error->retryAfter());
+        }
+        $this->response->setHeader('Content-Length', (string)strlen($body));
+        $this->response->throwContent($body, 'application/json');
+    }
+
     /**
      * 返回请求的 HTML
      * @access public
@@ -199,6 +223,8 @@ class Action extends Contents implements ActionInterface
                 echo BangumiAPI::updateSubjectCacheAndReturn((int)(self::queryString('id', '0') ?? '0'), $ValidTimeSpan);
             } catch (RateLimitExceeded $error) {
                 $this->sendRateLimitResponse($error, true);
+            } catch (RefreshFailure $error) {
+                $this->sendRefreshFailureResponse($error);
             }
             return;
         }
@@ -212,6 +238,8 @@ class Action extends Contents implements ActionInterface
             }
         } catch (RateLimitExceeded $error) {
             $this->sendRateLimitResponse($error, true);
+        } catch (RefreshFailure $error) {
+            $this->sendRefreshFailureResponse($error);
         }
     }
 }

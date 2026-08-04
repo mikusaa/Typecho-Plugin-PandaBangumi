@@ -623,15 +623,49 @@ async function fetchJson(url, signal) {
             return response.json();
         }
 
+        let payload = {};
+        try {
+            payload = await response.json();
+        } catch (error) {
+            payload = {};
+        }
+
         if (response.status !== 429 || retryNumber >= maxRetries) {
             const error = new Error(`HTTP ${response.status}`);
             error.status = response.status;
+            error.code = typeof payload.error === 'string' ? payload.error : '';
+            error.retryAfter = Number(payload.retry_after || 0);
             throw error;
         }
         await waitForRetry(retryAfterMilliseconds(response, retryNumber + 1), signal);
     }
 
     throw new Error('HTTP request retry exhausted');
+}
+
+/**
+ * 创建带重试操作的加载错误状态。
+ * @param {string} message
+ * @param {Function} retry
+ * @returns {HTMLDivElement}
+ */
+function createLoadError(message, retry) {
+    const state = document.createElement('div');
+    state.className = 'bgm-load-error';
+    state.setAttribute('role', 'status');
+
+    const text = document.createElement('p');
+    text.className = 'bgm-load-error__message';
+    text.textContent = message;
+    state.appendChild(text);
+
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'bgm-load-error__retry';
+    button.textContent = '重新加载';
+    button.addEventListener('click', retry);
+    state.appendChild(button);
+    return state;
 }
 
 /**
@@ -892,6 +926,14 @@ async function loadCalendar(calContainer) {
 
         const todayId = getTodayId();
         calContainer.textContent = '';
+        if (!Array.isArray(data) || data.length === 0) {
+            const empty = document.createElement('p');
+            empty.className = 'cal-no-item';
+            empty.textContent = '暂无日历数据';
+            calContainer.appendChild(empty);
+            calContainer.dataset.bgmLoaded = '1';
+            return;
+        }
 
         const tabs = document.createElement('div');
         tabs.className = 'cal-tabs';
@@ -1030,10 +1072,11 @@ async function loadCalendar(calContainer) {
         console.error('加载日历失败:', error);
         if (calContainer.isConnected) {
             calContainer.textContent = '';
-            const errorEl = document.createElement('p');
-            errorEl.className = 'error';
-            errorEl.textContent = '加载日历失败，请刷新页面。';
-            calContainer.appendChild(errorEl);
+            calContainer.appendChild(createLoadError('暂时无法加载日历。', () => {
+                calContainer.textContent = '';
+                delete calContainer.dataset.bgmLoaded;
+                loadCalendar(calContainer);
+            }));
             delete calContainer.dataset.bgmLoaded;
         }
     } finally {
@@ -1116,7 +1159,7 @@ async function renderCard(subjectId, cardElement) {
         if (isAbortError(error)) return;
         console.error('Error fetching data:', error);
         if (cardElement.isConnected) {
-            renderCardError(cardElement, subjectId);
+            renderCardError(cardElement, subjectId, error);
         }
     } finally {
         removeRequestController(controller);
@@ -1128,17 +1171,19 @@ async function renderCard(subjectId, cardElement) {
  * 渲染卡片错误状态
  * @param {HTMLElement} cardElement
  * @param {number|string} subjectId
+ * @param {Error} [error]
  */
-function renderCardError(cardElement, subjectId) {
+function renderCardError(cardElement, subjectId, error) {
     delete cardElement.dataset.bgmLoaded;
     delete cardElement.dataset.bgmLoading;
     delete cardElement.dataset.subjectType;
     cardElement.setAttribute('aria-busy', 'false');
     cardElement.textContent = '';
-    const errorEl = document.createElement('div');
-    errorEl.className = 'bgm-subject-card-state bgm-subject-card-state--error';
-    errorEl.setAttribute('role', 'status');
-    errorEl.textContent = `无法加载条目信息。请检查 Subject ID (${String(subjectId)}) 或网络连接。`;
+    const message = error && error.code === 'not_found'
+        ? `未找到 Subject ID (${String(subjectId)})。`
+        : '暂时无法加载条目信息。';
+    const errorEl = createLoadError(message, () => renderCard(subjectId, cardElement));
+    errorEl.classList.add('bgm-subject-card-state', 'bgm-subject-card-state--error');
     cardElement.appendChild(errorEl);
 }
 

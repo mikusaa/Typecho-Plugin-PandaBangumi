@@ -491,6 +491,35 @@
     grid-column: 1 / -1;
 }
 
+.bgm-load-error {
+    display: grid;
+    justify-items: center;
+    gap: 0.75rem;
+    padding: 2rem 1rem;
+    color: #b54a4a;
+    text-align: center;
+}
+
+.bgm-load-error__message {
+    margin: 0;
+}
+
+.bgm-load-error__retry {
+    appearance: none;
+    padding: 0.45rem 0.85rem;
+    border: 1px solid #cfd5dd;
+    border-radius: 6px;
+    background: #fff;
+    color: #333;
+    cursor: pointer;
+    font: inherit;
+}
+
+.bgm-load-error__retry:focus-visible {
+    outline: 3px solid #e800a4;
+    outline-offset: 2px;
+}
+
 /* --- Bangumi 单部 Subject 卡片 --- */
 .bgm-card {
     --pb-subject-bg: rgba(127, 127, 127, 0.055);
@@ -1284,6 +1313,16 @@ body.theme-dark .bgm-collection-action--loading .bgm-collection-action__icon {
 
 body.theme-dark .cal-no-item {
     color: #888888;
+}
+
+body.theme-dark .bgm-load-error {
+    color: #ff8f8f;
+}
+
+body.theme-dark .bgm-load-error__retry {
+    border-color: #505054;
+    background: #343437;
+    color: #f2f2f2;
 }
 
 @media (prefers-reduced-motion: reduce) {

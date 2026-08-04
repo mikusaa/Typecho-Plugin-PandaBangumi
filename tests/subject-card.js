@@ -11,13 +11,53 @@ const fixtures = JSON.parse(
     fs.readFileSync(path.join(__dirname, 'fixtures', 'subject-card-types.json'), 'utf8')
 );
 
+class FakeElement {
+    constructor(tagName = 'div') {
+        this.tagName = tagName.toUpperCase();
+        this.children = [];
+        this.dataset = {};
+        this.attributes = {};
+        this.className = '';
+        this.textContent = '';
+        this.isConnected = true;
+        this.classList = {
+            add: (...names) => {
+                this.className = [this.className, ...names].filter(Boolean).join(' ');
+            }
+        };
+    }
+
+    appendChild(child) {
+        this.children.push(child);
+        return child;
+    }
+
+    setAttribute(name, value) {
+        this.attributes[name] = String(value);
+    }
+
+    addEventListener(name, callback) {
+        this.listeners = { ...(this.listeners || {}), [name]: callback };
+    }
+}
+
+class FakeButtonElement extends FakeElement {
+    constructor() {
+        super('button');
+    }
+}
+
 const sandbox = {
     AbortController,
+    HTMLButtonElement: FakeButtonElement,
     URL,
     clearTimeout,
     console: { error() {}, log() {} },
     document: {
         addEventListener() {},
+        createElement(tagName) {
+            return tagName === 'button' ? new FakeButtonElement() : new FakeElement(tagName);
+        },
         readyState: 'loading'
     },
     setTimeout,
@@ -48,6 +88,7 @@ const createRequestController = vm.runInContext('createRequestController', sandb
 const centerCalendarTab = vm.runInContext('centerCalendarTab', sandbox);
 const fetchJson = vm.runInContext('fetchJson', sandbox);
 const loadImageResource = vm.runInContext('loadImageResource', sandbox);
+const renderCardError = vm.runInContext('renderCardError', sandbox);
 
 function normalized(name) {
     const fixture = fixtures[name];
@@ -145,6 +186,16 @@ assert.equal(shouldShowProgress('calendar', 'anime', true), false);
 assert.equal(shouldShowProgress('watching', 'anime', true), true);
 assert.equal(shouldShowProgress('watched', 'anime', true), false);
 assert.equal(shouldShowProgress('playing', 'game', true), false);
+
+const missingCard = new FakeElement();
+renderCardError(missingCard, 404, { code: 'not_found' });
+assert.equal(missingCard.children[0].children[0].textContent, '未找到 Subject ID (404)。');
+assert.equal(missingCard.children[0].children[1].textContent, '重新加载');
+
+const failedCard = new FakeElement();
+renderCardError(failedCard, 500, { code: 'refresh_failed' });
+assert.equal(failedCard.children[0].children[0].textContent, '暂时无法加载条目信息。');
+assert.equal(failedCard.children[0].children[1].textContent, '重新加载');
 
 const calendarScrollCalls = [];
 const calendarTabs = {
@@ -254,11 +305,24 @@ async function testRequestRetries() {
     calls = 0;
     sandbox.fetch = async () => {
         calls++;
-        return fakeResponse(500);
+        return fakeResponse(503, { error: 'refresh_failed', retry_after: 30 });
     };
     await assert.rejects(
         fetchJson('https://blog.example/PandaBangumi?type=calendar', new AbortController().signal),
-        error => error.status === 500
+        error => error.status === 503
+            && error.code === 'refresh_failed'
+            && error.retryAfter === 30
+    );
+    assert.equal(calls, 1);
+
+    calls = 0;
+    sandbox.fetch = async () => {
+        calls++;
+        return fakeResponse(404, { error: 'not_found' });
+    };
+    await assert.rejects(
+        fetchJson('https://blog.example/PandaBangumi?type=subject&id=404', new AbortController().signal),
+        error => error.status === 404 && error.code === 'not_found'
     );
     assert.equal(calls, 1);
 
@@ -348,7 +412,7 @@ async function runAsyncTests() {
 }
 
 runAsyncTests().then(() => {
-    process.stdout.write('7 subject card fixtures, 10 collection type mappings, 4 progress cases, 3 palette checks, calendar scroll, request queue, and retry checks passed\n');
+    process.stdout.write('7 subject card fixtures, 2 error states, 10 collection type mappings, 4 progress cases, 3 palette checks, calendar scroll, request queue, and retry checks passed\n');
 }).catch(error => {
     console.error(error);
     process.exitCode = 1;

@@ -4,6 +4,8 @@ namespace TypechoPlugin\PandaBangumi;
 
 require_once __DIR__ . '/src/PluginConfig.php';
 require_once __DIR__ . '/src/HttpTransport.php';
+require_once __DIR__ . '/src/RefreshFailure.php';
+require_once __DIR__ . '/src/RefreshBudget.php';
 require_once __DIR__ . '/src/HttpClient.php';
 require_once __DIR__ . '/src/CacheStore.php';
 require_once __DIR__ . '/src/RateLimitExceeded.php';
@@ -35,6 +37,7 @@ class BangumiAPI
     );
 
     private static ?PluginConfig $config = null;
+    private static ?RefreshBudget $refreshBudget = null;
     private static ?HttpClient $httpClient = null;
     private static ?CacheStore $cacheStore = null;
     private static ?RateLimiter $rateLimiter = null;
@@ -50,9 +53,18 @@ class BangumiAPI
         return self::$config ??= new PluginConfig();
     }
 
+    private static function refreshBudget(): RefreshBudget
+    {
+        return self::$refreshBudget ??= new RefreshBudget();
+    }
+
     private static function httpClient(): HttpClient
     {
-        return self::$httpClient ??= new HttpClient(self::config(), self::upstreamGate());
+        return self::$httpClient ??= new HttpClient(
+            self::config(),
+            self::upstreamGate(),
+            self::refreshBudget()
+        );
     }
 
     private static function cacheStore(): CacheStore
