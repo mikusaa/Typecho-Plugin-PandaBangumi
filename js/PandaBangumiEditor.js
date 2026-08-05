@@ -3,6 +3,7 @@
 (function () {
     const buttonId = 'wmd-pandabangumi-card-button';
     const panelId = 'pb-editor-card-panel';
+    const subjectHosts = new Set(['bangumi.tv', 'bgm.tv', 'chii.in']);
 
     function initializeEditor() {
         const toolbar = document.querySelector('#wmd-button-row');
@@ -67,10 +68,10 @@
             '<div class="wmd-prompt-background" data-pb-editor-action="cancel"></div>',
             '<div class="wmd-prompt-dialog pb-editor-dialog" role="dialog" aria-modal="true" aria-labelledby="pb-editor-card-title">',
             '    <p id="pb-editor-card-title" class="pb-editor-heading">插入 Bangumi 条目卡片</p>',
-            '    <p class="pb-editor-description">输入 Bangumi 条目地址中 /subject/ 后面的数字 ID。</p>',
+            '    <p class="pb-editor-description">输入数字 ID，或粘贴 bangumi.tv、bgm.tv、chii.in 的条目链接。</p>',
             '    <form novalidate>',
-            '        <label class="sr-only" for="pb-editor-subject-id">subject id</label>',
-            '        <input id="pb-editor-subject-id" type="text" inputmode="numeric" autocomplete="off" placeholder="subject id">',
+            '        <label class="sr-only" for="pb-editor-subject-id">subject id 或条目链接</label>',
+            '        <input id="pb-editor-subject-id" type="text" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="subject id 或条目链接">',
             '        <p class="pb-editor-error" aria-live="polite"></p>',
             '        <div class="pb-editor-actions">',
             '            <button type="submit" class="btn btn-s primary">插入</button>',
@@ -105,9 +106,9 @@
         });
         form.addEventListener('submit', function (event) {
             event.preventDefault();
-            const subjectId = input.value.trim();
-            if (!/^[1-9]\d*$/.test(subjectId) || !Number.isSafeInteger(Number(subjectId))) {
-                error.textContent = '请输入有效的正整数 subject id。';
+            const subjectId = parseSubjectId(input.value);
+            if (!subjectId) {
+                error.textContent = '请输入有效的 subject id 或 Bangumi 条目链接。';
                 input.focus();
                 input.select();
                 return;
@@ -119,6 +120,35 @@
         });
 
         input.focus();
+    }
+
+    function parseSubjectId(input) {
+        const value = input.trim();
+        let subjectId = value;
+
+        if (!/^[1-9]\d*$/.test(value)) {
+            let url;
+            try {
+                url = new URL(value);
+            } catch (error) {
+                return '';
+            }
+
+            const match = url.pathname.match(/^\/subject\/([1-9]\d*)\/?$/);
+            if (
+                url.protocol !== 'https:'
+                || !subjectHosts.has(url.hostname.toLowerCase())
+                || url.username
+                || url.password
+                || url.port
+                || !match
+            ) {
+                return '';
+            }
+            subjectId = match[1];
+        }
+
+        return Number.isSafeInteger(Number(subjectId)) ? subjectId : '';
     }
 
     function insertAtSelection(textarea, start, end, code) {

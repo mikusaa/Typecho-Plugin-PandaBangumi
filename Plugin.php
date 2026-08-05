@@ -220,7 +220,7 @@ HTML);
         }
         self::$editorInjected = true;
 
-        $version = htmlspecialchars(PandaBangumi_Plugin_VERSION . '.4', ENT_QUOTES, 'UTF-8');
+        $version = htmlspecialchars(PandaBangumi_Plugin_VERSION . '.5', ENT_QUOTES, 'UTF-8');
         $css = htmlspecialchars(self::pluginAssetUrl('css/PandaBangumiEditor.css'), ENT_QUOTES, 'UTF-8');
         $js = htmlspecialchars(self::pluginAssetUrl('js/PandaBangumiEditor.js'), ENT_QUOTES, 'UTF-8');
         $icon = htmlspecialchars(self::pluginAssetUrl('img/bangumi-editor.gif'), ENT_QUOTES, 'UTF-8');
