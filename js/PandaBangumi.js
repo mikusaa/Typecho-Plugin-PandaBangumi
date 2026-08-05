@@ -1098,6 +1098,37 @@ async function loadBgmCard() {
 }
 
 /**
+ * 创建尚未获知条目类型时的中性加载状态
+ * @returns {HTMLElement}
+ */
+function createCardLoadingState() {
+    const loading = document.createElement('div');
+    loading.className = 'bgm-subject-card-state bgm-subject-card-state--loading';
+    loading.setAttribute('role', 'status');
+
+    const loadingText = document.createElement('span');
+    loadingText.className = 'bgm-subject-card__sr-only';
+    loadingText.textContent = '正在从 Bangumi 加载条目信息...';
+    loading.setAttribute('aria-label', loadingText.textContent);
+    loading.appendChild(loadingText);
+
+    const loadingMedia = document.createElement('span');
+    loadingMedia.className = 'bgm-subject-card-state__media';
+    loading.appendChild(loadingMedia);
+
+    const loadingContent = document.createElement('span');
+    loadingContent.className = 'bgm-subject-card-state__content';
+    ['short', 'title', 'subtitle', 'summary', 'meta'].forEach(size => {
+        const line = document.createElement('span');
+        line.className = `bgm-subject-card-state__line bgm-subject-card-state__line--${size}`;
+        loadingContent.appendChild(line);
+    });
+    loading.appendChild(loadingContent);
+
+    return loading;
+}
+
+/**
  * 根据 Subject ID 渲染 Bangumi 条目卡片
  *
  * @param {number|string} subjectId
@@ -1109,29 +1140,7 @@ async function renderCard(subjectId, cardElement) {
     cardElement.dataset.bgmLoading = '1';
     cardElement.setAttribute('aria-busy', 'true');
     cardElement.textContent = '';
-    const loading = document.createElement('div');
-    loading.className = 'bgm-subject-card-state bgm-subject-card-state--loading';
-    loading.setAttribute('role', 'status');
-
-    const loadingText = document.createElement('span');
-    loadingText.className = 'bgm-subject-card__sr-only';
-    loadingText.textContent = '正在从 Bangumi 加载条目信息...';
-    loading.appendChild(loadingText);
-
-    const loadingPoster = document.createElement('span');
-    loadingPoster.className = 'bgm-subject-card-state__poster';
-    loading.setAttribute('aria-label', loadingText.textContent);
-    loading.appendChild(loadingPoster);
-
-    const loadingContent = document.createElement('span');
-    loadingContent.className = 'bgm-subject-card-state__content';
-    ['short', 'title', 'subtitle', 'summary', 'meta'].forEach(size => {
-        const line = document.createElement('span');
-        line.className = `bgm-subject-card-state__line bgm-subject-card-state__line--${size}`;
-        loadingContent.appendChild(line);
-    });
-    loading.appendChild(loadingContent);
-    cardElement.appendChild(loading);
+    cardElement.appendChild(createCardLoadingState());
 
     const safeSubjectId = parseInt(subjectId, 10);
     if (!Number.isInteger(safeSubjectId) || safeSubjectId <= 0) {

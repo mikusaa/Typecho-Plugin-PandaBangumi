@@ -89,6 +89,17 @@ const centerCalendarTab = vm.runInContext('centerCalendarTab', sandbox);
 const fetchJson = vm.runInContext('fetchJson', sandbox);
 const loadImageResource = vm.runInContext('loadImageResource', sandbox);
 const renderCardError = vm.runInContext('renderCardError', sandbox);
+const createCardLoadingState = vm.runInContext('createCardLoadingState', sandbox);
+
+const loadingState = createCardLoadingState();
+assert.equal(loadingState.className, 'bgm-subject-card-state bgm-subject-card-state--loading');
+assert.equal(loadingState.attributes.role, 'status');
+assert.equal(loadingState.children.length, 3);
+assert.equal(loadingState.children[0].textContent, '正在从 Bangumi 加载条目信息...');
+assert.equal(loadingState.children[1].className, 'bgm-subject-card-state__media');
+assert.equal(loadingState.children[2].className, 'bgm-subject-card-state__content');
+assert.equal(loadingState.children[2].children.length, 5);
+assert.equal(loadingState.children.some(child => child.className === 'bgm-subject-card-state__poster'), false);
 
 function normalized(name) {
     const fixture = fixtures[name];
