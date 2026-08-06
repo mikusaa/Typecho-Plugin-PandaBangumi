@@ -153,10 +153,9 @@ HTML);
                     && !isset($parts['user'])
                     && !isset($parts['pass'])
                     && !isset($parts['query'])
-                    && !isset($parts['fragment'])
-                    && (!isset($parts['path']) || $parts['path'] === '' || $parts['path'] === '/');
+                    && !isset($parts['fragment']);
             },
-            _t('请填写不带路径的 HTTPS API 镜像地址。')
+            _t('请填写有效的 HTTPS API 镜像地址。')
         );
         $form->addInput($ApiBase);
 

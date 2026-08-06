@@ -54,7 +54,7 @@ final class PluginConfig
         if (isset($parts['port'])) {
             $origin .= ':' . (int)$parts['port'];
         }
-        return $origin;
+        return $origin . rtrim((string)($parts['path'] ?? ''), '/');
     }
 
     public function buildApiUrl(string $path): string

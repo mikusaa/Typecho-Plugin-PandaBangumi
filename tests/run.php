@@ -521,9 +521,18 @@ namespace {
         Helper::$pluginOptions = (object)array('ApiBase' => '');
         assertSameValue('https://api.bgm.tv', BangumiAPI::getApiBase());
 
-        $mirror = config(array('ApiBase' => 'https://mirror.example.com/v0/path'));
-        assertSameValue('https://mirror.example.com', $mirror->apiBase());
-        assertSameValue('https://mirror.example.com/calendar', $mirror->buildApiUrl('/calendar'));
+        $mirror = config(array('ApiBase' => 'https://mirror.example.com/bgm/'));
+        assertSameValue('https://mirror.example.com/bgm', $mirror->apiBase());
+        assertSameValue('https://mirror.example.com/bgm/calendar', $mirror->buildApiUrl('/calendar'));
+        assertSameValue('https://mirror.example.com/bgm/v0/subjects/123', $mirror->buildApiUrl('/v0/subjects/123'));
+
+        $nestedMirror = config(array('ApiBase' => 'https://mirror.example.com:8443/api/proxy/bangumi///'));
+        assertSameValue('https://mirror.example.com:8443/api/proxy/bangumi', $nestedMirror->apiBase());
+        assertSameValue(
+            'https://mirror.example.com:8443/api/proxy/bangumi/v0/users/tester/collections',
+            $nestedMirror->buildApiUrl('/v0/users/tester/collections')
+        );
+
         assertSameValue('https://api.bgm.tv', config(array('ApiBase' => 'http://mirror.example.com'))->apiBase());
     });
 
