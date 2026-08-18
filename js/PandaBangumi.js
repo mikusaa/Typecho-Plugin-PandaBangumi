@@ -607,6 +607,172 @@ function setWeekPickerExpanded(picker, expanded) {
 }
 
 /**
+ * 创建可在数据返回前显示的星期选择器。
+ * @param {number} todayId
+ * @returns {{header: HTMLDivElement, tabs: HTMLDivElement, getActiveTab: Function, getActivePanel: Function, setPanels: Function}}
+ */
+function createCalendarControls(todayId) {
+    const weekdays = [
+        { id: 1, shortName: '周一', fullName: '星期一' },
+        { id: 2, shortName: '周二', fullName: '星期二' },
+        { id: 3, shortName: '周三', fullName: '星期三' },
+        { id: 4, shortName: '周四', fullName: '星期四' },
+        { id: 5, shortName: '周五', fullName: '星期五' },
+        { id: 6, shortName: '周六', fullName: '星期六' },
+        { id: 7, shortName: '周日', fullName: '星期日' }
+    ];
+    const currentDayId = Number(todayId) >= 1 && Number(todayId) <= 7 ? Number(todayId) : 1;
+    const calendarHeader = document.createElement('div');
+    calendarHeader.className = 'bgm-calendar-header';
+
+    const weekPicker = document.createElement('div');
+    weekPicker.className = 'cal-week-picker';
+
+    const weekTrigger = document.createElement('button');
+    weekTrigger.className = 'cal-week-trigger';
+    weekTrigger.type = 'button';
+    weekTrigger.setAttribute('aria-expanded', 'false');
+
+    const weekTriggerLabel = document.createElement('span');
+    weekTriggerLabel.className = 'cal-week-trigger__label';
+    weekTrigger.appendChild(weekTriggerLabel);
+
+    const weekTriggerChevron = document.createElement('span');
+    weekTriggerChevron.className = 'cal-week-trigger__chevron';
+    weekTriggerChevron.setAttribute('aria-hidden', 'true');
+    weekTrigger.appendChild(weekTriggerChevron);
+
+    const tabs = document.createElement('div');
+    tabs.className = 'cal-tabs';
+    const tabButtons = [];
+    let activeTab = null;
+    let panels = null;
+
+    weekdays.forEach(day => {
+        const tabButton = document.createElement('button');
+        tabButton.className = 'cal-tab-button';
+        tabButton.type = 'button';
+        tabButton.textContent = day.shortName;
+        tabButton.title = day.fullName;
+        tabButton.setAttribute('aria-label', day.fullName);
+        tabButton.dataset.dayId = String(day.id);
+        if (day.id === currentDayId) {
+            tabButton.classList.add('active', 'is-today');
+            tabButton.setAttribute('aria-current', 'date');
+            tabButton.setAttribute('aria-pressed', 'true');
+            activeTab = tabButton;
+        } else {
+            tabButton.setAttribute('aria-pressed', 'false');
+        }
+        tabButtons.push(tabButton);
+        tabs.appendChild(tabButton);
+    });
+
+    const updateWeekTrigger = tabButton => {
+        if (!tabButton) return;
+        weekTriggerLabel.textContent = tabButton.textContent;
+        weekTrigger.setAttribute('aria-label', `选择星期，当前${tabButton.textContent}`);
+        weekTrigger.classList.toggle('is-today', tabButton.classList.contains('is-today'));
+    };
+    const getActivePanel = () => {
+        if (!panels || !activeTab) return null;
+        return Array.from(panels.querySelectorAll('.cal-panel')).find(panel => (
+            panel.dataset.dayId === activeTab.dataset.dayId
+        )) || null;
+    };
+    const syncActivePanel = () => {
+        if (!panels || !activeTab) return;
+        panels.querySelectorAll('.cal-panel').forEach(panel => {
+            panel.classList.toggle('active', panel.dataset.dayId === activeTab.dataset.dayId);
+        });
+    };
+    const activateTab = tabButton => {
+        if (!tabButton) return;
+        tabButtons.forEach(button => {
+            const isActive = button === tabButton;
+            button.classList.toggle('active', isActive);
+            button.setAttribute('aria-pressed', isActive ? 'true' : 'false');
+        });
+        activeTab = tabButton;
+        updateWeekTrigger(activeTab);
+        syncActivePanel();
+        const activePanel = getActivePanel();
+        if (activePanel) loadCalendarPanelImages(activePanel);
+    };
+
+    updateWeekTrigger(activeTab);
+    weekTrigger.addEventListener('click', () => {
+        setWeekPickerExpanded(weekPicker, !weekPicker.classList.contains('is-expanded'));
+    });
+    tabs.addEventListener('click', event => {
+        if (!event.target.matches('.cal-tab-button')) return;
+        activateTab(event.target);
+        setWeekPickerExpanded(weekPicker, false);
+        if (window.matchMedia('(max-width: 480px)').matches) {
+            weekTrigger.focus({ preventScroll: true });
+        }
+    });
+
+    weekPicker.appendChild(weekTrigger);
+    weekPicker.appendChild(tabs);
+    calendarHeader.appendChild(weekPicker);
+
+    return {
+        header: calendarHeader,
+        tabs,
+        getActiveTab: () => activeTab,
+        getActivePanel,
+        setPanels(nextPanels) {
+            panels = nextPanels;
+            syncActivePanel();
+        }
+    };
+}
+
+/**
+ * 创建日历数据请求期间的占位骨架。
+ * @returns {HTMLDivElement}
+ */
+function createCalendarLoadingState() {
+    const state = document.createElement('div');
+    state.className = 'bgm-calendar-skeleton';
+    state.setAttribute('role', 'status');
+    state.setAttribute('aria-label', '正在加载追番日历...');
+
+    const loadingText = document.createElement('span');
+    loadingText.className = 'bgm-calendar-skeleton__sr-only';
+    loadingText.textContent = '正在加载追番日历...';
+    state.appendChild(loadingText);
+
+    const grid = document.createElement('div');
+    grid.className = 'bgm-calendar-skeleton__grid';
+    grid.setAttribute('aria-hidden', 'true');
+    for (let index = 0; index < 2; index++) {
+        const card = document.createElement('span');
+        card.className = 'bgm-calendar-skeleton__card';
+        grid.appendChild(card);
+    }
+    state.appendChild(grid);
+
+    return state;
+}
+
+/**
+ * 将日历容器切换为数据请求中的骨架状态。
+ * @param {HTMLElement} calContainer
+ * @param {HTMLElement} calendarHeader
+ * @returns {HTMLDivElement}
+ */
+function showCalendarLoading(calContainer, calendarHeader) {
+    calContainer.textContent = '';
+    calContainer.appendChild(calendarHeader);
+    const loadingState = createCalendarLoadingState();
+    calContainer.appendChild(loadingState);
+    calContainer.setAttribute('aria-busy', 'true');
+    return loadingState;
+}
+
+/**
  * 获取 JSON 响应
  * @param {string} url
  * @param {AbortSignal} [signal]
@@ -909,80 +1075,38 @@ async function loadCalendar(calContainer) {
     calContainer.dataset.bgmLoading = '1';
 
     const calFilter = calContainer.getAttribute('data-filter') === 'watching' ? 'watching' : 'all';
-    const previousElement = calContainer.previousElementSibling;
-    const calendarHeading = previousElement && previousElement.matches('h1, h2, h3, h4, h5, h6')
-        ? previousElement
-        : null;
     const url = `${window.bgmBase}?type=calendar&filter=${calFilter}`;
     const controller = createRequestController();
     const getTodayId = () => {
         const jsDay = new Date().getDay();
         return jsDay === 0 ? 7 : jsDay;
     };
+    const calendarControls = createCalendarControls(getTodayId());
+    const loadingState = showCalendarLoading(calContainer, calendarControls.header);
 
     try {
         const data = await fetchJson(url, controller.signal);
         if (!calContainer.isConnected) return;
 
-        const todayId = getTodayId();
-        calContainer.textContent = '';
         if (!Array.isArray(data) || data.length === 0) {
             const empty = document.createElement('p');
             empty.className = 'cal-no-item';
             empty.textContent = '暂无日历数据';
-            calContainer.appendChild(empty);
+            loadingState.replaceWith(empty);
             calContainer.dataset.bgmLoaded = '1';
+            calContainer.setAttribute('aria-busy', 'false');
             return;
         }
 
-        const tabs = document.createElement('div');
-        tabs.className = 'cal-tabs';
-
-        const weekPicker = document.createElement('div');
-        weekPicker.className = 'cal-week-picker';
-
-        const weekTrigger = document.createElement('button');
-        weekTrigger.className = 'cal-week-trigger';
-        weekTrigger.type = 'button';
-        weekTrigger.setAttribute('aria-expanded', 'false');
-        weekTrigger.setAttribute('aria-label', '选择星期');
-
-        const weekTriggerLabel = document.createElement('span');
-        weekTriggerLabel.className = 'cal-week-trigger__label';
-        weekTrigger.appendChild(weekTriggerLabel);
-
-        const weekTriggerChevron = document.createElement('span');
-        weekTriggerChevron.className = 'cal-week-trigger__chevron';
-        weekTriggerChevron.setAttribute('aria-hidden', 'true');
-        weekTrigger.appendChild(weekTriggerChevron);
-
         const panels = document.createElement('div');
         panels.className = 'cal-panels';
-        const shortWeekdayNames = ['', '周一', '周二', '周三', '周四', '周五', '周六', '周日'];
-
-        (Array.isArray(data) ? data : []).forEach(day => {
-            const dayId = String(day.id || '');
-            const fullDayName = String(day.date_cn || '');
-            const tabButton = document.createElement('button');
-            tabButton.className = 'cal-tab-button';
-            tabButton.type = 'button';
-            tabButton.textContent = shortWeekdayNames[Number(day.id)] || fullDayName;
-            tabButton.title = fullDayName;
-            tabButton.setAttribute('aria-label', fullDayName);
-            tabButton.dataset.dayId = dayId;
-            if (Number(day.id) === todayId) {
-                tabButton.classList.add('active', 'is-today');
-                tabButton.setAttribute('aria-current', 'date');
-            }
-            tabButton.setAttribute('aria-pressed', Number(day.id) === todayId ? 'true' : 'false');
-            tabs.appendChild(tabButton);
-
+        const daysById = new Map(data.map(day => [Number(day.id), day]));
+        for (let dayNumber = 1; dayNumber <= 7; dayNumber++) {
+            const day = daysById.get(dayNumber) || {};
+            const dayId = String(dayNumber);
             const panel = document.createElement('div');
             panel.className = 'cal-panel';
             panel.dataset.dayId = dayId;
-            if (Number(day.id) === todayId) {
-                panel.classList.add('active');
-            }
 
             const itemsArray = day.items ? Object.values(day.items) : [];
             if (itemsArray.length > 0) {
@@ -1009,75 +1133,33 @@ async function loadCalendar(calContainer) {
                 panel.appendChild(noItem);
             }
             panels.appendChild(panel);
-        });
-
-        const calendarHeader = document.createElement('div');
-        calendarHeader.className = 'bgm-calendar-header';
-        if (calendarHeading) {
-            calendarHeading.classList.add('bgm-calendar-title');
-            calendarHeader.appendChild(calendarHeading);
-        }
-        const activeTab = tabs.querySelector('.cal-tab-button.active');
-        if (activeTab) {
-            weekTriggerLabel.textContent = activeTab.textContent;
-            weekTrigger.setAttribute('aria-label', `选择星期，当前${activeTab.textContent}`);
-            weekTrigger.classList.toggle('is-today', activeTab.classList.contains('is-today'));
         }
 
-        weekPicker.appendChild(weekTrigger);
-        weekPicker.appendChild(tabs);
-        calendarHeader.appendChild(weekPicker);
-
-        calContainer.appendChild(calendarHeader);
-        calContainer.appendChild(panels);
+        calendarControls.setPanels(panels);
+        loadingState.replaceWith(panels);
 
         await waitForStableLayout();
-        loadCalendarPanelImages(panels.querySelector('.cal-panel.active'));
+        loadCalendarPanelImages(calendarControls.getActivePanel());
 
+        const activeTab = calendarControls.getActiveTab();
         if (activeTab && !window.matchMedia('(max-width: 480px)').matches) {
-            centerCalendarTab(tabs, activeTab);
+            centerCalendarTab(calendarControls.tabs, activeTab);
         }
-
-        weekTrigger.addEventListener('click', () => {
-            setWeekPickerExpanded(weekPicker, !weekPicker.classList.contains('is-expanded'));
-        });
-
-        tabs.addEventListener('click', (e) => {
-            if (e.target.matches('.cal-tab-button')) {
-                const dayId = e.target.dataset.dayId;
-                tabs.querySelectorAll('.cal-tab-button').forEach(btn => {
-                    btn.classList.remove('active');
-                    btn.setAttribute('aria-pressed', 'false');
-                });
-                panels.querySelectorAll('.cal-panel').forEach(pnl => pnl.classList.remove('active'));
-                e.target.classList.add('active');
-                e.target.setAttribute('aria-pressed', 'true');
-                weekTriggerLabel.textContent = e.target.textContent;
-                weekTrigger.setAttribute('aria-label', `选择星期，当前${e.target.textContent}`);
-                weekTrigger.classList.toggle('is-today', e.target.classList.contains('is-today'));
-                const targetPanel = Array.from(panels.querySelectorAll('.cal-panel')).find(panel => panel.dataset.dayId === dayId);
-                if (targetPanel) {
-                    targetPanel.classList.add('active');
-                    loadCalendarPanelImages(targetPanel);
-                }
-                setWeekPickerExpanded(weekPicker, false);
-                if (window.matchMedia('(max-width: 480px)').matches) {
-                    weekTrigger.focus({ preventScroll: true });
-                }
-            }
-        });
         calContainer.dataset.bgmLoaded = '1';
+        calContainer.setAttribute('aria-busy', 'false');
     } catch (error) {
         if (isAbortError(error)) return;
         console.error('加载日历失败:', error);
         if (calContainer.isConnected) {
-            calContainer.textContent = '';
-            calContainer.appendChild(createLoadError('暂时无法加载日历。', () => {
-                calContainer.textContent = '';
+            const errorState = createLoadError('暂时无法加载日历。', () => {
                 delete calContainer.dataset.bgmLoaded;
                 loadCalendar(calContainer);
-            }));
+            });
+            const currentContent = calContainer.querySelector('.bgm-calendar-skeleton, .cal-panels');
+            if (currentContent) currentContent.replaceWith(errorState);
+            else calContainer.appendChild(errorState);
             delete calContainer.dataset.bgmLoaded;
+            calContainer.setAttribute('aria-busy', 'false');
         }
     } finally {
         removeRequestController(controller);

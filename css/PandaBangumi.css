@@ -278,14 +278,9 @@
 .bgm-calendar-header {
     display: flex;
     align-items: flex-end;
-    justify-content: space-between;
+    justify-content: flex-end;
     gap: 1.5rem;
     margin-bottom: 1rem;
-}
-
-.bgm-calendar-title {
-    flex-shrink: 0;
-    margin: 0 !important;
 }
 
 .cal-week-picker {
@@ -355,6 +350,48 @@
     animation: fadeIn 0.5s ease;
 }
 
+.bgm-calendar-skeleton {
+    width: 100%;
+}
+
+.bgm-calendar-skeleton__sr-only {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    clip-path: inset(50%);
+    white-space: nowrap;
+}
+
+.bgm-calendar-skeleton__card::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    background: linear-gradient(105deg, transparent 25%, rgba(255, 255, 255, 0.52) 45%, transparent 65%);
+    background-size: 220% 100%;
+    animation: bgmCoverShimmer 1.35s ease-in-out infinite;
+}
+
+.bgm-calendar-skeleton__grid {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 15px;
+    width: 100%;
+}
+
+.bgm-calendar-skeleton__card {
+    position: relative;
+    display: block;
+    width: 100%;
+    aspect-ratio: 2 / 3;
+    overflow: hidden;
+    border-radius: 8px;
+    background: #e8e8e8;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12);
+}
+
 @keyframes fadeIn {
     from {
         opacity: 0;
@@ -382,6 +419,10 @@
 
     .cal-week-picker {
         width: 100%;
+    }
+
+    .bgm-calendar-skeleton__grid {
+        grid-template-columns: repeat(3, minmax(0, 1fr));
     }
 }
 
@@ -470,6 +511,13 @@
         min-width: 0;
         padding: 0.48rem 0.05rem;
         font-size: 0.78rem;
+    }
+}
+
+@media screen and (max-width: 450px) {
+    .bgm-calendar-skeleton__grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 12px;
     }
 }
 
@@ -1272,6 +1320,15 @@ body.theme-dark .cal-tabs {
     background: #262628;
 }
 
+body.theme-dark .bgm-calendar-skeleton__card {
+    background: #2c2c2e;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.6);
+}
+
+body.theme-dark .bgm-calendar-skeleton__card::after {
+    background-image: linear-gradient(105deg, transparent 25%, rgba(255, 255, 255, 0.12) 45%, transparent 65%);
+}
+
 body.theme-dark .cal-tab-button {
     color: #a9a9a9;
 }
@@ -1357,6 +1414,7 @@ body.theme-dark .bgm-load-error__retry {
 @media (prefers-reduced-motion: reduce) {
     .bgm-poster-card::before,
     .bgm-card .bgm-subject-card__poster::after,
+    .bgm-calendar-skeleton__card::after,
     .bgm-card .bgm-subject-card-state--loading::before {
         animation: none !important;
     }

@@ -22,7 +22,20 @@ class FakeElement {
         this.isConnected = true;
         this.classList = {
             add: (...names) => {
-                this.className = [this.className, ...names].filter(Boolean).join(' ');
+                const classNames = new Set(this.className.split(/\s+/).filter(Boolean));
+                names.forEach(name => classNames.add(name));
+                this.className = [...classNames].join(' ');
+            },
+            remove: (...names) => {
+                const removed = new Set(names);
+                this.className = this.className.split(/\s+/).filter(name => name && !removed.has(name)).join(' ');
+            },
+            contains: name => this.className.split(/\s+/).includes(name),
+            toggle: (name, force) => {
+                const enabled = force === undefined ? !this.classList.contains(name) : Boolean(force);
+                if (enabled) this.classList.add(name);
+                else this.classList.remove(name);
+                return enabled;
             }
         };
     }
@@ -90,6 +103,28 @@ const fetchJson = vm.runInContext('fetchJson', sandbox);
 const loadImageResource = vm.runInContext('loadImageResource', sandbox);
 const renderCardError = vm.runInContext('renderCardError', sandbox);
 const createCardLoadingState = vm.runInContext('createCardLoadingState', sandbox);
+const createCalendarLoadingState = vm.runInContext('createCalendarLoadingState', sandbox);
+const createCalendarControls = vm.runInContext('createCalendarControls', sandbox);
+
+const calendarLoadingState = createCalendarLoadingState();
+assert.equal(calendarLoadingState.className, 'bgm-calendar-skeleton');
+assert.equal(calendarLoadingState.attributes.role, 'status');
+assert.equal(calendarLoadingState.children.length, 2);
+assert.equal(calendarLoadingState.children[0].className, 'bgm-calendar-skeleton__sr-only');
+assert.equal(calendarLoadingState.children[1].className, 'bgm-calendar-skeleton__grid');
+assert.equal(calendarLoadingState.children[1].children.length, 2);
+assert.equal(calendarLoadingState.children[1].children.every(child => (
+    child.className === 'bgm-calendar-skeleton__card'
+)), true);
+
+const calendarControls = createCalendarControls(2);
+assert.equal(calendarControls.header.className, 'bgm-calendar-header');
+assert.equal(calendarControls.tabs.className, 'cal-tabs');
+assert.equal(calendarControls.tabs.children.length, 7);
+assert.equal(calendarControls.tabs.children[0].textContent, '周一');
+assert.equal(calendarControls.tabs.children[1].textContent, '周二');
+assert.equal(calendarControls.tabs.children[1].classList.contains('active'), true);
+assert.equal(calendarControls.tabs.children[1].attributes['aria-current'], 'date');
 
 const loadingState = createCardLoadingState();
 assert.equal(loadingState.className, 'bgm-subject-card-state bgm-subject-card-state--loading');

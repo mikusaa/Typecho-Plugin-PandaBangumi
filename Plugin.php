@@ -248,7 +248,7 @@ HTML);
 
         echo '<link rel="stylesheet" href="';
         Options::alloc()->pluginUrl('/PandaBangumi/css/PandaBangumi.css');
-        echo '?v=' . PandaBangumi_Plugin_VERSION . '.2" />';
+        echo '?v=' . PandaBangumi_Plugin_VERSION . '.6" />';
         echo '<script>window.bgmBase=' . json_encode($bgmBase) . ';</script>';
     }
 
@@ -267,6 +267,6 @@ HTML);
 
         echo '<script type="text/javascript" src="';
         Options::alloc()->pluginUrl('/PandaBangumi/js/PandaBangumi.js');
-        echo '?v=' . PandaBangumi_Plugin_VERSION . '.2"></script>';
+        echo '?v=' . PandaBangumi_Plugin_VERSION . '.6"></script>';
     }
 }
