@@ -5,6 +5,7 @@ namespace TypechoPlugin\PandaBangumi;
 final class CoverService
 {
     private const COVER_SIZE = 'large';
+    private const COVER_RESIZE_WIDTH = 600;
     private const IMAGE_SIZES = array('small', 'grid', 'common', 'medium', 'large');
     private const MAX_BYTES = 5242880;
     private const CACHE_MAX_BYTES = 536870912;
@@ -78,16 +79,45 @@ final class CoverService
             return null;
         }
 
-        $fetchUrl = $source;
+        $normalizedScheme = $scheme;
         if ($scheme === 'http' && $host === 'lain.bgm.tv' && $port === null) {
-            $fetchUrl = 'https://' . substr($source, strlen('http://'));
+            $normalizedScheme = 'https';
         }
 
+        $path = (string)($parts['path'] ?? '');
+        $fallbackUrl = $this->buildSourceUrl($parts, $normalizedScheme, $path);
+        $coverPath = $path;
+        if (preg_match('#^/(?:r/\d+/)?pic/cover/(.+)$#', $path, $matches)) {
+            $coverPath = '/r/' . self::COVER_RESIZE_WIDTH . '/pic/cover/' . $matches[1];
+        }
+        $coverUrl = $this->buildSourceUrl($parts, $normalizedScheme, $coverPath);
+        $hasFallback = $coverUrl !== $fallbackUrl;
+
         return array(
-            'source_url' => $source,
-            'fetch_url' => $fetchUrl,
-            'version' => substr(hash('sha256', self::COVER_SIZE . "\n" . $source), 0, 16)
+            'source_url' => $coverUrl,
+            'fallback_url' => $hasFallback ? $fallbackUrl : '',
+            'fetch_url' => $coverUrl,
+            'fallback_fetch_url' => $hasFallback ? $fallbackUrl : '',
+            'version' => substr(hash('sha256', 'r' . self::COVER_RESIZE_WIDTH . "\n" . $coverUrl), 0, 16)
         );
+    }
+
+    private function buildSourceUrl(array $parts, string $scheme, string $path): string
+    {
+        $host = (string)$parts['host'];
+        if (str_contains($host, ':') && !str_starts_with($host, '[')) {
+            $host = '[' . $host . ']';
+        }
+
+        $url = $scheme . '://' . $host;
+        if (isset($parts['port'])) {
+            $url .= ':' . (int)$parts['port'];
+        }
+        $url .= $path;
+        if (isset($parts['query'])) {
+            $url .= '?' . $parts['query'];
+        }
+        return $url;
     }
 
     public function isPublicIp(string $ip): bool
@@ -99,9 +129,9 @@ final class CoverService
         ) !== false;
     }
 
-    private function resolveFetchTarget(array $cover): ?array
+    private function resolveFetchTarget(string $fetchUrl): ?array
     {
-        $parts = parse_url((string)($cover['fetch_url'] ?? ''));
+        $parts = parse_url($fetchUrl);
         if (!is_array($parts)) {
             return null;
         }
@@ -115,7 +145,7 @@ final class CoverService
 
         if (filter_var($host, FILTER_VALIDATE_IP) !== false) {
             return $this->isPublicIp($host)
-                ? array('url' => $cover['fetch_url'], 'resolve' => array())
+                ? array('url' => $fetchUrl, 'resolve' => array())
                 : null;
         }
         if (filter_var($host, FILTER_VALIDATE_DOMAIN, FILTER_FLAG_HOSTNAME) === false) {
@@ -142,7 +172,7 @@ final class CoverService
         $ip = $addresses[0];
         $resolvedIp = str_contains($ip, ':') ? '[' . $ip . ']' : $ip;
         return array(
-            'url' => $cover['fetch_url'],
+            'url' => $fetchUrl,
             'resolve' => array($host . ':443:' . $resolvedIp)
         );
     }
@@ -247,85 +277,103 @@ final class CoverService
                 return true;
             }
 
-            $target = $this->resolveFetchTarget($cover);
-            if ($target === null) {
+            $targets = array();
+            foreach (array_unique(array_filter(array(
+                (string)($cover['fetch_url'] ?? ''),
+                (string)($cover['fallback_fetch_url'] ?? '')
+            ))) as $fetchUrl) {
+                $target = $this->resolveFetchTarget($fetchUrl);
+                if ($target !== null) {
+                    $targets[] = $target;
+                }
+            }
+            if (count($targets) === 0) {
                 return false;
             }
 
-            return $this->upstreamGate->cover(function () use ($directory, $target, $basePath): bool {
-                $tmpFile = tempnam($directory, 'pb_cover_');
-                $fileHandle = $tmpFile !== false ? @fopen($tmpFile, 'wb') : false;
-                $curl = $fileHandle !== false ? curl_init($target['url']) : false;
-                if ($tmpFile === false || $fileHandle === false || $curl === false) {
-                    if (is_resource($fileHandle)) {
-                        fclose($fileHandle);
-                    }
-                    if ($tmpFile !== false) {
-                        @unlink($tmpFile);
-                    }
-                    return false;
-                }
-
-                $bytes = 0;
-                curl_setopt($curl, CURLOPT_SSL_VERIFYPEER, true);
-                curl_setopt($curl, CURLOPT_SSL_VERIFYHOST, 2);
-                curl_setopt($curl, CURLOPT_HEADER, false);
-                curl_setopt($curl, CURLOPT_CONNECTTIMEOUT, 5);
-                curl_setopt($curl, CURLOPT_TIMEOUT, 15);
-                curl_setopt($curl, CURLOPT_FOLLOWLOCATION, false);
-                if (defined('CURLOPT_PROTOCOLS') && defined('CURLPROTO_HTTPS')) {
-                    curl_setopt($curl, CURLOPT_PROTOCOLS, CURLPROTO_HTTPS);
-                }
-                if (count($target['resolve']) > 0) {
-                    curl_setopt($curl, CURLOPT_RESOLVE, $target['resolve']);
-                }
-                curl_setopt($curl, CURLOPT_REFERER, 'https://bgm.tv/');
-                curl_setopt($curl, CURLOPT_USERAGENT, $this->config->userAgent());
-                curl_setopt($curl, CURLOPT_WRITEFUNCTION, static function ($handle, string $chunk) use ($fileHandle, &$bytes): int {
-                    $length = strlen($chunk);
-                    if ($bytes + $length > self::MAX_BYTES) {
-                        return 0;
-                    }
-
-                    $written = fwrite($fileHandle, $chunk);
-                    if ($written === false) {
-                        return 0;
-                    }
-                    $bytes += $written;
-                    return $written;
-                });
-
-                $result = curl_exec($curl);
-                $httpCode = (int)curl_getinfo($curl, CURLINFO_RESPONSE_CODE);
-                $curlError = curl_error($curl);
-                curl_close($curl);
-                fclose($fileHandle);
-
-                $mime = $this->cachedMime($tmpFile);
-                $valid = $result !== false
-                    && $httpCode >= 200
-                    && $httpCode < 300
-                    && $bytes > 0
-                    && $mime !== '';
-
-                $cachePath = '';
-                if ($valid) {
-                    $cachePath = $basePath . '.' . self::MIME_TYPES[$mime];
-                    $valid = @rename($tmpFile, $cachePath);
-                    if ($valid) {
-                        @chmod($cachePath, 0644);
-                        $this->enforceQuota($cachePath);
+            return $this->upstreamGate->cover(function () use ($directory, $targets, $basePath): bool {
+                foreach ($targets as $target) {
+                    if ($this->downloadTarget($directory, $target, $basePath)) {
+                        return true;
                     }
                 }
-                if (!$valid) {
-                    @unlink($tmpFile);
-                    error_log('PandaBangumi cover request failed: HTTP ' . $httpCode . ' ' . $curlError);
-                }
-                return $valid;
+                return false;
             });
         } finally {
             $this->cacheStore->releaseRefreshLock($lockHandle);
         }
+    }
+
+    private function downloadTarget(string $directory, array $target, string $basePath): bool
+    {
+        $tmpFile = tempnam($directory, 'pb_cover_');
+        $fileHandle = $tmpFile !== false ? @fopen($tmpFile, 'wb') : false;
+        $curl = $fileHandle !== false ? curl_init($target['url']) : false;
+        if ($tmpFile === false || $fileHandle === false || $curl === false) {
+            if (is_resource($fileHandle)) {
+                fclose($fileHandle);
+            }
+            if ($tmpFile !== false) {
+                @unlink($tmpFile);
+            }
+            return false;
+        }
+
+        $bytes = 0;
+        curl_setopt($curl, CURLOPT_SSL_VERIFYPEER, true);
+        curl_setopt($curl, CURLOPT_SSL_VERIFYHOST, 2);
+        curl_setopt($curl, CURLOPT_HEADER, false);
+        curl_setopt($curl, CURLOPT_CONNECTTIMEOUT, 5);
+        curl_setopt($curl, CURLOPT_TIMEOUT, 15);
+        curl_setopt($curl, CURLOPT_FOLLOWLOCATION, false);
+        if (defined('CURLOPT_PROTOCOLS') && defined('CURLPROTO_HTTPS')) {
+            curl_setopt($curl, CURLOPT_PROTOCOLS, CURLPROTO_HTTPS);
+        }
+        if (count($target['resolve']) > 0) {
+            curl_setopt($curl, CURLOPT_RESOLVE, $target['resolve']);
+        }
+        curl_setopt($curl, CURLOPT_REFERER, 'https://bgm.tv/');
+        curl_setopt($curl, CURLOPT_USERAGENT, $this->config->userAgent());
+        curl_setopt($curl, CURLOPT_WRITEFUNCTION, static function ($handle, string $chunk) use ($fileHandle, &$bytes): int {
+            $length = strlen($chunk);
+            if ($bytes + $length > self::MAX_BYTES) {
+                return 0;
+            }
+
+            $written = fwrite($fileHandle, $chunk);
+            if ($written === false) {
+                return 0;
+            }
+            $bytes += $written;
+            return $written;
+        });
+
+        $result = curl_exec($curl);
+        $httpCode = (int)curl_getinfo($curl, CURLINFO_RESPONSE_CODE);
+        $curlError = curl_error($curl);
+        curl_close($curl);
+        fclose($fileHandle);
+
+        $mime = $this->cachedMime($tmpFile);
+        $valid = $result !== false
+            && $httpCode >= 200
+            && $httpCode < 300
+            && $bytes > 0
+            && $mime !== '';
+
+        if ($valid) {
+            $cachePath = $basePath . '.' . self::MIME_TYPES[$mime];
+            $valid = @rename($tmpFile, $cachePath);
+            if ($valid) {
+                @chmod($cachePath, 0644);
+                $this->enforceQuota($cachePath);
+            }
+        }
+        if (!$valid) {
+            @unlink($tmpFile);
+            error_log('PandaBangumi cover request failed: HTTP ' . $httpCode . ' ' . $curlError);
+        }
+        return $valid;
     }
 
     private function response(int $subjectId, string $version, string $source): array
@@ -382,12 +430,13 @@ final class CoverService
     {
         $source = $this->selectUrl($item['images'] ?? array());
         $cover = $this->describeSource($source);
-        unset($item['images'], $item['img'], $item['cover_version']);
+        unset($item['images'], $item['img'], $item['img_fallback'], $item['cover_version']);
 
         if ($this->config->cacheImages()) {
             $item['cover_version'] = $cover['version'] ?? '';
         } else {
             $item['img'] = $cover['source_url'] ?? '';
+            $item['img_fallback'] = $cover['fallback_url'] ?? '';
         }
         return $item;
     }

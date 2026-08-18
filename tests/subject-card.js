@@ -101,6 +101,8 @@ const createRequestController = vm.runInContext('createRequestController', sandb
 const centerCalendarTab = vm.runInContext('centerCalendarTab', sandbox);
 const fetchJson = vm.runInContext('fetchJson', sandbox);
 const loadImageResource = vm.runInContext('loadImageResource', sandbox);
+const loadImageWithFallback = vm.runInContext('loadImageWithFallback', sandbox);
+const createPosterCard = vm.runInContext('createPosterCard', sandbox);
 const renderCardError = vm.runInContext('renderCardError', sandbox);
 const createCardLoadingState = vm.runInContext('createCardLoadingState', sandbox);
 const createCalendarLoadingState = vm.runInContext('createCalendarLoadingState', sandbox);
@@ -156,6 +158,24 @@ const book = normalized('book');
 assert.equal(book.typeKey, 'book');
 assert.equal(book.primaryMeta, '9 册');
 assert.equal(book.posterUrl, 'https://lain.bgm.tv/pic/cover/l/book.jpg');
+
+const directBook = JSON.parse(JSON.stringify(normalize({
+    ...fixtures.book,
+    images: { large: 'https://lain.bgm.tv/r/600/pic/cover/l/book.jpg' },
+    img_fallback: 'https://lain.bgm.tv/pic/cover/l/book.jpg'
+}, fixtures.book.id)));
+assert.equal(directBook.posterUrl, 'https://lain.bgm.tv/r/600/pic/cover/l/book.jpg');
+assert.equal(directBook.posterFallbackUrl, 'https://lain.bgm.tv/pic/cover/l/book.jpg');
+
+const directPoster = createPosterCard({
+    id: 101,
+    name: 'Test',
+    url: 'https://bgm.tv/subject/101',
+    img: 'https://lain.bgm.tv/r/600/pic/cover/l/test.jpg',
+    img_fallback: 'https://lain.bgm.tv/pic/cover/l/test.jpg'
+}, { type: 'calendar' });
+assert.equal(directPoster.dataset.coverUrl, 'https://lain.bgm.tv/r/600/pic/cover/l/test.jpg');
+assert.equal(directPoster.dataset.coverFallbackUrl, 'https://lain.bgm.tv/pic/cover/l/test.jpg');
 
 const game = normalized('game');
 assert.equal(game.typeKey, 'game');
@@ -451,10 +471,44 @@ async function testLocalCoverRetry() {
     }
 }
 
+async function testExternalCoverFallback() {
+    class FakeFallbackImage {
+        constructor() {
+            this.urls = [];
+            this.onload = null;
+            this.onerror = null;
+        }
+
+        set src(value) {
+            this.urls.push(value);
+            Promise.resolve().then(() => {
+                const callback = value.includes('/r/600/') ? this.onerror : this.onload;
+                if (callback) callback();
+            });
+        }
+
+        removeAttribute() {}
+    }
+
+    const image = new FakeFallbackImage();
+    const loadedUrl = await loadImageWithFallback(
+        image,
+        'https://lain.bgm.tv/r/600/pic/cover/l/test.jpg',
+        'https://lain.bgm.tv/pic/cover/l/test.jpg',
+        new AbortController().signal
+    );
+    assert.equal(loadedUrl, 'https://lain.bgm.tv/pic/cover/l/test.jpg');
+    assert.deepEqual(image.urls, [
+        'https://lain.bgm.tv/r/600/pic/cover/l/test.jpg',
+        'https://lain.bgm.tv/pic/cover/l/test.jpg'
+    ]);
+}
+
 async function runAsyncTests() {
     await testRequestQueue();
     await testRequestRetries();
     await testLocalCoverRetry();
+    await testExternalCoverFallback();
 }
 
 runAsyncTests().then(() => {

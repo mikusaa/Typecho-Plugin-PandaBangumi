@@ -164,10 +164,14 @@ final class SubjectService
         $images = $this->coverService->extractImages($data['images'] ?? array());
         $cover = $this->coverService->describeSource($this->coverService->selectUrl($images));
         if ($this->config->cacheImages()) {
-            unset($data['images']);
+            unset($data['images'], $data['img_fallback']);
             $data['cover_version'] = $cover['version'] ?? '';
         } else {
+            if ($cover !== null) {
+                $images['large'] = $cover['source_url'];
+            }
             $data['images'] = $images;
+            $data['img_fallback'] = $cover['fallback_url'] ?? '';
             unset($data['cover_version']);
         }
         return $this->encode($data);

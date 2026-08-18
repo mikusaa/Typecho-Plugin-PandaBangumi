@@ -628,8 +628,31 @@ namespace {
 
             $source = 'http://lain.bgm.tv/pic/cover/l/example.jpg';
             $cover = $service->describeSource($source);
-            assertSameValue('https://lain.bgm.tv/pic/cover/l/example.jpg', $cover['fetch_url']);
-            assertSameValue(substr(hash('sha256', "large\n" . $source), 0, 16), $cover['version']);
+            $resized = 'https://lain.bgm.tv/r/600/pic/cover/l/example.jpg';
+            assertSameValue($resized, $cover['source_url']);
+            assertSameValue($resized, $cover['fetch_url']);
+            assertSameValue('https://lain.bgm.tv/pic/cover/l/example.jpg', $cover['fallback_url']);
+            assertSameValue($cover['fallback_url'], $cover['fallback_fetch_url']);
+            assertSameValue(substr(hash('sha256', "r600\n" . $resized), 0, 16), $cover['version']);
+
+            $httpsCover = $service->describeSource('https://lain.bgm.tv/pic/cover/l/example.jpg');
+            assertSameValue($cover['version'], $httpsCover['version']);
+
+            $mirror = $service->describeSource(
+                'https://mirror.example/r/400/pic/cover/l/example.jpg?token=1'
+            );
+            assertSameValue(
+                'https://mirror.example/r/600/pic/cover/l/example.jpg?token=1',
+                $mirror['source_url']
+            );
+            assertSameValue(
+                'https://mirror.example/r/400/pic/cover/l/example.jpg?token=1',
+                $mirror['fallback_url']
+            );
+
+            $other = $service->describeSource('https://example.com/images/example.jpg?size=large');
+            assertSameValue('https://example.com/images/example.jpg?size=large', $other['source_url']);
+            assertSameValue('', $other['fallback_url']);
             assertSameValue(null, $service->describeSource('https://user@example.com/image.jpg'));
             assertSameValue(null, $service->describeSource("https://example.com/im\nage.jpg"));
             assertSameValue(null, $service->describeSource('file:///tmp/image.jpg'));
@@ -681,17 +704,21 @@ namespace {
     $test('Cover output modes', static function (): void {
         $directory = testDirectory();
         try {
-            $item = array('id' => 101, 'images' => array('large' => 'https://example.com/cover.jpg'));
+            $source = 'https://lain.bgm.tv/pic/cover/l/cover.jpg';
+            $resized = 'https://lain.bgm.tv/r/600/pic/cover/l/cover.jpg';
+            $item = array('id' => 101, 'images' => array('large' => $source));
             $direct = coverService(config(array('ImageMode' => 'direct')), new CacheStore($directory))->prepareItem($item);
-            assertSameValue('https://example.com/cover.jpg', $direct['img']);
+            assertSameValue($resized, $direct['img']);
+            assertSameValue($source, $direct['img_fallback']);
             assertSameValue(false, array_key_exists('images', $direct));
 
             $cached = coverService(config(array('ImageMode' => 'cache')), new CacheStore($directory))->prepareItem($item);
             assertSameValue(false, array_key_exists('img', $cached));
             assertSameValue(
-                substr(hash('sha256', "large\nhttps://example.com/cover.jpg"), 0, 16),
+                substr(hash('sha256', "r600\n" . $resized), 0, 16),
                 $cached['cover_version']
             );
+            assertSameValue(false, array_key_exists('img_fallback', $cached));
         } finally {
             removeTestDirectory($directory);
         }
@@ -1388,6 +1415,23 @@ namespace {
             assertSameValue(101, $subject['id']);
             assertSameValue(false, array_key_exists('images', $subject));
             assertTrueValue((bool)preg_match('/^[a-f0-9]{16}$/', $subject['cover_version']));
+
+            $directConfig = config(array('ImageMode' => 'direct'));
+            $directService = new SubjectService(
+                $directConfig,
+                new FakeHttpTransport(array()),
+                $cacheStore,
+                coverService($directConfig, $cacheStore)
+            );
+            $directSubject = json_decode($directService->update(101, 60), true);
+            assertSameValue(
+                'https://lain.bgm.tv/r/600/pic/cover/l/test-101.jpg',
+                $directSubject['images']['large']
+            );
+            assertSameValue(
+                'https://lain.bgm.tv/pic/cover/l/test-101.jpg',
+                $directSubject['img_fallback']
+            );
         } finally {
             removeTestDirectory($directory);
         }

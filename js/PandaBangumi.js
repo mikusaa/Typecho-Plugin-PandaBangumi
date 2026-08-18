@@ -249,6 +249,33 @@ async function loadImageResource(image, url, signal) {
 }
 
 /**
+ * 加载主封面，失败时尝试原图地址。
+ * @param {HTMLImageElement} image
+ * @param {string} url
+ * @param {string} fallbackUrl
+ * @param {AbortSignal} signal
+ * @returns {Promise<string>}
+ */
+async function loadImageWithFallback(image, url, fallbackUrl, signal) {
+    const candidates = [url, fallbackUrl].filter((candidate, index, values) => (
+        candidate && values.indexOf(candidate) === index
+    ));
+    let lastError = new Error('封面加载失败');
+
+    for (const candidate of candidates) {
+        try {
+            await loadImageResource(image, candidate, signal);
+            return candidate;
+        } catch (error) {
+            if (isAbortError(error)) throw error;
+            lastError = error;
+            image.removeAttribute('src');
+        }
+    }
+    throw lastError;
+}
+
+/**
  * 校验 HTTPS 链接
  * @param {string} value
  * @returns {string}
@@ -402,6 +429,7 @@ function finishPosterCoverLoad(card, image, state) {
     card.classList.add(state === 'loaded' ? 'is-cover-loaded' : 'is-cover-error');
     card.dataset.coverState = state;
     delete card.dataset.coverUrl;
+    delete card.dataset.coverFallbackUrl;
 }
 
 /**
@@ -412,12 +440,14 @@ function loadPosterCover(card) {
     if (!card || card.dataset.coverState === 'loading' || card.dataset.coverState === 'loaded') return;
 
     const imageUrl = String(card.dataset.coverUrl || '');
+    const fallbackUrl = String(card.dataset.coverFallbackUrl || '');
     const cover = card.querySelector('.bgm-poster-card__cover');
     if (!imageUrl || !cover) {
         card.classList.remove('is-cover-pending', 'is-cover-loading');
         card.classList.add('is-cover-error');
         card.dataset.coverState = 'error';
         delete card.dataset.coverUrl;
+        delete card.dataset.coverFallbackUrl;
         return;
     }
 
@@ -434,7 +464,7 @@ function loadPosterCover(card) {
     const controller = createRequestController();
     const record = { image, controller };
     PandaBangumiRuntime.coverLoads.set(card, record);
-    loadImageResource(image, imageUrl, controller.signal).then(() => {
+    loadImageWithFallback(image, imageUrl, fallbackUrl, controller.signal).then(loadedImageUrl => {
         const applyCover = () => {
             if (!card.isConnected) {
                 if (PandaBangumiRuntime.coverLoads.get(card) === record) {
@@ -444,7 +474,7 @@ function loadPosterCover(card) {
                 return;
             }
             if (PandaBangumiRuntime.coverLoads.get(card) !== record) return;
-            cover.style.backgroundImage = `url("${imageUrl}")`;
+            cover.style.backgroundImage = `url("${loadedImageUrl}")`;
             finishPosterCoverLoad(card, image, 'loaded');
         };
 
@@ -851,7 +881,7 @@ function shouldShowPosterProgress(type, cate, hasProgress) {
 /**
  * 创建通用封面卡片
  * @param {object} item
- * @param {{type: string, cate?: string, imageUrl?: string}} options
+ * @param {{type: string, cate?: string, imageUrl?: string, fallbackImageUrl?: string}} options
  * @returns {HTMLElement}
  */
 function createPosterCard(item, options) {
@@ -863,6 +893,9 @@ function createPosterCard(item, options) {
         || localImageUrl
         || item.img;
     const imageUrl = safeImageUrl(requestedImageUrl);
+    const requestedFallbackUrl = options && options.fallbackImageUrl
+        || (!localImageUrl ? item.img_fallback : '');
+    const fallbackImageUrl = safeImageUrl(requestedFallbackUrl);
     const name = String(item.name || '');
     const displayName = String(item.name_cn || item.name || '');
     const count = Number(item.count || 0);
@@ -881,6 +914,9 @@ function createPosterCard(item, options) {
     cover.className = 'bgm-poster-card__cover';
     if (imageUrl) {
         link.dataset.coverUrl = imageUrl;
+        if (fallbackImageUrl && fallbackImageUrl !== imageUrl) {
+            link.dataset.coverFallbackUrl = fallbackImageUrl;
+        }
         link.dataset.coverState = 'pending';
         link.classList.add('is-cover-pending');
     }
@@ -1119,10 +1155,12 @@ async function loadCalendar(calContainer) {
                         name: item.name,
                         name_cn: title,
                         url: href,
-                        img: item.img
+                        img: item.img,
+                        img_fallback: item.img_fallback
                     }, {
                         type: 'calendar',
-                        imageUrl
+                        imageUrl,
+                        fallbackImageUrl: item.img_fallback
                     });
                     panel.appendChild(bangumiItem);
                 });
@@ -1554,6 +1592,7 @@ function normalizeSubjectCardData(data, subjectId) {
         summary: normalizeSubjectText(source.summary),
         posterUrl: buildSubjectCoverUrl(source, subjectId)
             || safeImageUrl(source.images && source.images.large),
+        posterFallbackUrl: safeImageUrl(source.img_fallback),
         date: normalizeSubjectText(source.date),
         score: Number.isFinite(scoreValue) && scoreValue > 0 ? scoreValue.toFixed(1) : '暂无评分',
         hasScore: Number.isFinite(scoreValue) && scoreValue > 0,
@@ -1626,10 +1665,15 @@ function buildCardElement(data, subjectId) {
     if (cardData.posterUrl) {
         poster.classList.add('is-cover-loading');
         const controller = createRequestController();
-        loadImageResource(img, cardData.posterUrl, controller.signal).then(() => {
+        loadImageWithFallback(
+            img,
+            cardData.posterUrl,
+            cardData.posterFallbackUrl,
+            controller.signal
+        ).then(loadedImageUrl => {
             poster.classList.remove('is-cover-loading', 'is-cover-error');
             poster.classList.add('is-cover-loaded');
-            if (isMusic) applyMusicObiColor(wrapper, img, cardData.posterUrl);
+            if (isMusic) applyMusicObiColor(wrapper, img, loadedImageUrl);
         }).catch(error => {
             if (isAbortError(error)) return;
             poster.classList.remove('is-cover-loading', 'is-cover-loaded');
