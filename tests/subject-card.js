@@ -6,7 +6,7 @@ const path = require('node:path');
 const vm = require('node:vm');
 
 const root = path.resolve(__dirname, '..');
-const source = fs.readFileSync(path.join(root, 'js', 'PandaBangumi.js'), 'utf8');
+const source = fs.readFileSync(path.join(root, 'assets', 'js', 'PandaBangumi.js'), 'utf8');
 const fixtures = JSON.parse(
     fs.readFileSync(path.join(__dirname, 'fixtures', 'subject-card-types.json'), 'utf8')
 );

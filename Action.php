@@ -12,7 +12,7 @@ use Utils\Helper;
  *
  * API 获取、更新数据，处理前端 AJAX 请求
  *
- * @author 熊猫小A
+ * @author mikusa
  */
 if (!defined('__TYPECHO_ROOT_DIR__')) {
     exit;

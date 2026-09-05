@@ -4,7 +4,7 @@
 
 [使用说明](https://www.himiku.com/archives/pandabangumi.html) | [更新日志](changelog.md) | [下载发布版](https://github.com/mikusaa/Typecho-Plugin-PandaBangumi/releases)
 
-本项目由 AlanDecode 创建，基于 [Izumiko 维护的版本](https://github.com/Izumiko/PandaBangumi-Typecho-Plugin) 继续开发。
+本项目由 AlanDecode 创建，基于 [Izumiko 维护的版本](https://github.com/Izumiko/PandaBangumi-Typecho-Plugin) 继续开发，现由 mikusa 维护。
 
 ## 功能
 
@@ -45,6 +45,10 @@
 插件只会在自身目录中创建和维护 `.cache/`。Apache 会使用随附的 `.htaccess` 拒绝访问；Nginx 和 Caddy 用户必须在站点配置中禁止通过 Web 访问 `usr/plugins/PandaBangumi/.cache/`。
 
 具体配置示例和缓存规则请查看[使用说明](https://www.himiku.com/archives/pandabangumi.html)。
+
+## 致谢
+
+文章编辑器条目卡片插入按钮使用的图片来自 [https://bgm.tv/blog/370650](https://bgm.tv/blog/370650)。
 
 ## License
 

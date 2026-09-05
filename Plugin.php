@@ -20,12 +20,12 @@ if (!defined('__TYPECHO_ROOT_DIR__')) {
  *
  *
  * @package PandaBangumi
- * @author 熊猫小A
- * @version 4.0.0
+ * @author mikusa
+ * @version 4.0.1
  * @link https://www.himiku.com/archives/pandabangumi.html
  */
 
-define('PandaBangumi_Plugin_VERSION', '4.0.0');
+define('PandaBangumi_Plugin_VERSION', '4.0.1');
 
 class Plugin implements PluginInterface
 {
@@ -94,12 +94,12 @@ class Plugin implements PluginInterface
     {
         $version = htmlspecialchars(PandaBangumi_Plugin_VERSION, ENT_QUOTES, 'UTF-8');
         $adminVersion = $version . '.3';
-        $adminCss = htmlspecialchars(self::pluginAssetUrl('css/PandaBangumiAdmin.css'), ENT_QUOTES, 'UTF-8');
-        $adminJs = htmlspecialchars(self::pluginAssetUrl('js/PandaBangumiAdmin.js'), ENT_QUOTES, 'UTF-8');
+        $adminCss = htmlspecialchars(self::pluginAssetUrl('assets/css/PandaBangumiAdmin.css'), ENT_QUOTES, 'UTF-8');
+        $adminJs = htmlspecialchars(self::pluginAssetUrl('assets/js/PandaBangumiAdmin.js'), ENT_QUOTES, 'UTF-8');
 
         echo '<link rel="stylesheet" href="' . $adminCss . '?v=' . $adminVersion . '">';
         echo '<script defer src="' . $adminJs . '?v=' . $adminVersion . '"></script>';
-        echo '作者：<a href="https://www.imalan.cn">熊猫小A</a>，插件介绍页：<a href="https://www.himiku.com/archives/pandabangumi.html">PandaBangumi 插件介绍与使用说明</a><br>';
+        echo '作者：<a href="https://github.com/mikusaa">mikusa</a>，插件介绍页：<a href="https://www.himiku.com/archives/pandabangumi.html">PandaBangumi 插件介绍与使用说明</a><br>';
 
         $snippets = new Layout('details', ['class' => 'pb-settings-snippets']);
         $snippets->html(<<<'HTML'
@@ -220,9 +220,9 @@ HTML);
         self::$editorInjected = true;
 
         $version = htmlspecialchars(PandaBangumi_Plugin_VERSION . '.5', ENT_QUOTES, 'UTF-8');
-        $css = htmlspecialchars(self::pluginAssetUrl('css/PandaBangumiEditor.css'), ENT_QUOTES, 'UTF-8');
-        $js = htmlspecialchars(self::pluginAssetUrl('js/PandaBangumiEditor.js'), ENT_QUOTES, 'UTF-8');
-        $icon = htmlspecialchars(self::pluginAssetUrl('img/bangumi-editor.gif'), ENT_QUOTES, 'UTF-8');
+        $css = htmlspecialchars(self::pluginAssetUrl('assets/css/PandaBangumiEditor.css'), ENT_QUOTES, 'UTF-8');
+        $js = htmlspecialchars(self::pluginAssetUrl('assets/js/PandaBangumiEditor.js'), ENT_QUOTES, 'UTF-8');
+        $icon = htmlspecialchars(self::pluginAssetUrl('assets/images/bangumi-editor.gif'), ENT_QUOTES, 'UTF-8');
 
         echo '<link rel="stylesheet" href="' . $css . '?v=' . $version . '">';
         echo '<script defer src="' . $js . '?v=' . $version . '" data-pb-editor-icon="' . $icon . '?v=' . $version . '"></script>';
@@ -246,9 +246,8 @@ HTML);
         Options::alloc()->index('/PandaBangumi');
         $bgmBase = ob_get_clean();
 
-        echo '<link rel="stylesheet" href="';
-        Options::alloc()->pluginUrl('/PandaBangumi/css/PandaBangumi.css');
-        echo '?v=' . PandaBangumi_Plugin_VERSION . '.7" />';
+        $css = htmlspecialchars(self::pluginAssetUrl('assets/css/PandaBangumi.css'), ENT_QUOTES, 'UTF-8');
+        echo '<link rel="stylesheet" href="' . $css . '?v=' . PandaBangumi_Plugin_VERSION . '.7" />';
         echo '<script>window.bgmBase=' . json_encode($bgmBase) . ';</script>';
     }
 
@@ -265,8 +264,7 @@ HTML);
         }
         self::$footerInjected = true;
 
-        echo '<script type="text/javascript" src="';
-        Options::alloc()->pluginUrl('/PandaBangumi/js/PandaBangumi.js');
-        echo '?v=' . PandaBangumi_Plugin_VERSION . '.7"></script>';
+        $js = htmlspecialchars(self::pluginAssetUrl('assets/js/PandaBangumi.js'), ENT_QUOTES, 'UTF-8');
+        echo '<script type="text/javascript" src="' . $js . '?v=' . PandaBangumi_Plugin_VERSION . '.7"></script>';
     }
 }
