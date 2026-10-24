@@ -213,6 +213,17 @@
     }
 }
 
+@keyframes bgmSkeletonPulse {
+    0%,
+    100% {
+        opacity: 1;
+    }
+
+    50% {
+        opacity: 0.55;
+    }
+}
+
 @keyframes bgmCoverShimmer {
     from {
         background-position: 130% 0;
@@ -570,11 +581,16 @@
 
 /* --- Bangumi 单部 Subject 卡片 --- */
 .bgm-card {
-    --pb-subject-bg: rgba(127, 127, 127, 0.055);
-    --pb-subject-border: rgba(127, 127, 127, 0.24);
-    --pb-subject-text: inherit;
+    --pb-subject-bg: #ffffff;
+    --pb-subject-border: rgba(0, 0, 0, 0.06);
+    /* 卡片为实色底，文字色需固定，不能继承主题（深色主题下会变成浅字白底） */
+    --pb-subject-text: #24292f;
     --pb-subject-muted: currentColor;
     --pb-subject-accent: #c65f76;
+    --pb-subject-skeleton: rgba(127, 127, 127, 0.16);
+    --pb-card-poster-width: 104px;
+    --pb-card-min-height: 176px;
+    --pb-card-padding: 0.25rem 0.55rem 0.2rem 0.85rem;
     display: block;
     width: 100%;
     max-width: 720px;
@@ -602,6 +618,7 @@
 .bgm-card[data-subject-type='music'] {
     --pb-subject-accent: #9a405d;
     --pb-music-obi-color: var(--pb-subject-accent);
+    --pb-card-min-height: 196px;
 }
 
 .bgm-card[data-subject-type='unknown'] {
@@ -612,13 +629,14 @@
     display: grid !important;
     width: 100%;
     min-width: 0;
-    min-height: 168px;
-    grid-template-columns: 112px minmax(0, 1fr);
+    min-height: var(--pb-card-min-height);
+    grid-template-columns: var(--pb-card-poster-width) minmax(0, 1fr);
     overflow: hidden;
+    padding: 10px;
     border: 1px solid var(--pb-subject-border) !important;
-    border-radius: 8px;
+    border-radius: 14px;
     background: var(--pb-subject-bg);
-    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.06);
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04), 0 8px 24px rgba(0, 0, 0, 0.06);
     color: var(--pb-subject-text) !important;
     font-family: inherit;
     text-decoration: none !important;
@@ -626,9 +644,8 @@
 }
 
 .bgm-card .bgm-subject-card:hover {
-    border-color: var(--pb-subject-accent) !important;
-    box-shadow: 0 7px 18px rgba(0, 0, 0, 0.1);
-    transform: translateY(-2px);
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05), 0 14px 32px rgba(0, 0, 0, 0.1);
+    transform: translateY(-3px);
 }
 
 .bgm-card .bgm-subject-card:focus-visible {
@@ -638,11 +655,13 @@
 
 .bgm-card .bgm-subject-card__poster {
     position: relative;
-    width: 112px;
-    aspect-ratio: 2 / 3;
-    align-self: start;
+    width: var(--pb-card-poster-width);
+    min-height: calc(var(--pb-card-poster-width) * 1.5);
+    align-self: stretch;
     overflow: hidden;
+    border-radius: 9px;
     background: rgba(127, 127, 127, 0.16);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.16);
 }
 
 .bgm-card .bgm-subject-card__obi {
@@ -650,7 +669,6 @@
 }
 
 .bgm-card[data-subject-type='music'] .bgm-subject-card {
-    min-height: 178px;
     grid-template-columns: 30px 176px minmax(0, 1fr);
 }
 
@@ -664,10 +682,12 @@
     justify-content: space-between;
     padding: 0.65rem 0;
     overflow: hidden;
+    border-radius: 6px 0 0 6px;
     background: var(--pb-music-obi-color);
     box-shadow: inset -1px 0 rgba(0, 0, 0, 0.15), 3px 0 9px rgba(0, 0, 0, 0.1);
     color: #fff;
     flex-direction: column;
+    contain: size;
 }
 
 .bgm-card[data-subject-type='music'] .bgm-subject-card__obi-label,
@@ -709,6 +729,7 @@
     place-items: center;
     padding: 6px 8px 6px 10px;
     border-right: 1px solid rgba(127, 127, 127, 0.26);
+    border-radius: 0 6px 6px 0;
     background: rgba(127, 127, 127, 0.08);
     box-shadow: inset -3px 0 7px rgba(0, 0, 0, 0.06), 3px 0 9px rgba(0, 0, 0, 0.05);
 }
@@ -739,7 +760,7 @@
 .bgm-card[data-subject-type='music'] .bgm-subject-card__poster {
     width: 160px;
     height: 160px;
-    aspect-ratio: 1 / 1;
+    min-height: 0;
     align-self: center;
     border: 1px solid rgba(0, 0, 0, 0.1);
 }
@@ -780,11 +801,7 @@
     display: flex;
     min-width: 0;
     flex-direction: column;
-    padding: 0.75rem 0.9rem;
-}
-
-.bgm-card[data-subject-type='music'] .bgm-subject-card__content {
-    padding: 0.8rem 0.95rem 0.7rem;
+    padding: var(--pb-card-padding);
 }
 
 .bgm-card .bgm-subject-card__header {
@@ -817,9 +834,11 @@
 
 .bgm-card .bgm-subject-card__type {
     flex: 0 0 auto;
-    padding: 0.14rem 0.42rem;
-    border: 1px solid var(--pb-subject-accent);
-    border-radius: 4px;
+    padding: 0.14rem 0.55rem;
+    border: 1px solid transparent;
+    border-radius: 999px;
+    background: rgba(127, 127, 127, 0.12);
+    background: color-mix(in srgb, var(--pb-subject-accent) 13%, transparent);
     color: var(--pb-subject-accent);
     font-size: 0.68rem;
     font-weight: 700;
@@ -829,7 +848,7 @@
 .bgm-card .bgm-subject-card__kind {
     flex: 0 0 auto;
     color: var(--pb-subject-accent);
-    font-size: 0.56rem;
+    font-size: 0.62rem;
     font-weight: 850;
     letter-spacing: 0;
     line-height: 1.2;
@@ -852,11 +871,18 @@
     line-height: 1;
 }
 
+/* 骨架同样带内边距，保证评分徽章与骨架高度一致 */
 .bgm-card .bgm-subject-card__score {
+    padding: 0.2rem 0.5rem;
     color: #c88013;
-    font-size: 1.05rem;
+    font-size: 0.92rem;
     font-variant-numeric: tabular-nums;
     font-weight: 800;
+}
+
+.bgm-card .bgm-subject-card__score:not(.bgm-subject-card__placeholder):not(.is-empty) {
+    border-radius: 999px;
+    background: rgba(200, 128, 19, 0.12);
 }
 
 .bgm-card .bgm-subject-card__score.is-empty,
@@ -896,7 +922,7 @@
     display: -webkit-box;
     overflow: hidden;
     margin-top: 0.42rem !important;
-    font-size: 1.03rem;
+    font-size: 1.08rem;
     font-weight: 750;
     letter-spacing: 0;
     line-height: 1.35;
@@ -921,12 +947,13 @@
     align-items: baseline;
     gap: 0.5rem;
     margin-top: 0.3rem;
+    line-height: 1.35;
 }
 
 .bgm-card .bgm-subject-card__credit-label {
     flex: 0 0 auto;
     color: var(--pb-subject-accent);
-    font-size: 0.5rem;
+    font-size: 0.6rem;
     font-weight: 800;
     letter-spacing: 0;
 }
@@ -965,14 +992,9 @@
     border-top: 1px solid var(--pb-subject-border);
 }
 
-.bgm-card[data-subject-type='music'] .bgm-subject-card__tag {
-    border: 1px solid var(--pb-subject-border);
-    border-radius: 2px;
-    background: transparent;
-}
-
+/* 底栏始终单行，避免长平台名或多标签撑高卡片、与骨架高度不一致 */
 .bgm-card .bgm-subject-card__footer {
-    flex-wrap: wrap;
+    flex-wrap: nowrap;
     justify-content: space-between;
     gap: 0.35rem 0.75rem;
     margin-top: auto;
@@ -980,11 +1002,26 @@
 }
 
 .bgm-card .bgm-subject-card__meta {
-    flex-wrap: wrap;
+    flex: 1 1 auto;
+    flex-wrap: nowrap;
+    overflow: hidden;
     gap: 0.35rem 0.7rem;
+    white-space: nowrap;
     color: var(--pb-subject-muted);
     font-size: 0.7rem;
+    line-height: 1.4;
     opacity: 0.64;
+}
+
+.bgm-card .bgm-subject-card__meta-item {
+    flex: 0 0 auto;
+}
+
+.bgm-card .bgm-subject-card__meta-item--primary {
+    flex: 0 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 
 .bgm-card .bgm-subject-card__meta-item + .bgm-subject-card__meta-item::before {
@@ -1011,35 +1048,53 @@
 
 .bgm-card .bgm-subject-card__spec-label {
     color: var(--pb-subject-muted);
-    font-size: 0.44rem;
+    font-size: 0.56rem;
     font-weight: 750;
     letter-spacing: 0;
     opacity: 0.55;
 }
 
 .bgm-card .bgm-subject-card__spec-value {
-    margin-top: 0.2rem;
+    margin-top: 0.22rem;
     color: var(--pb-subject-text);
-    font-size: 0.63rem;
+    font-size: 0.68rem;
     font-variant-numeric: tabular-nums;
     font-weight: 700;
     white-space: nowrap;
 }
 
+/* 放不下的标签换到被裁掉的第二行，整枚隐藏而不是被截断 */
 .bgm-card .bgm-subject-card__tags {
+    flex: 0 1 auto;
     flex-wrap: wrap;
     justify-content: flex-end;
     gap: 0.28rem;
+    min-width: 0;
+    max-height: calc(1.25em + 0.28rem + 2px);
+    overflow: hidden;
+    font-size: 0.66rem;
 }
 
 .bgm-card .bgm-subject-card__tag {
-    padding: 0.14rem 0.38rem;
-    border-radius: 4px;
-    background: rgba(127, 127, 127, 0.11);
+    padding: 0.14rem 0.5rem;
+    border: 1px solid var(--pb-subject-border);
+    border-radius: 999px;
+    background: transparent;
     color: var(--pb-subject-muted);
-    font-size: 0.66rem;
+    font-size: 1em;
     line-height: 1.25;
     opacity: 0.76;
+    white-space: nowrap;
+}
+
+.bgm-card .bgm-subject-card__tag::before {
+    content: '#';
+    margin-right: 0.1rem;
+    opacity: 0.5;
+}
+
+.bgm-card .bgm-subject-card__tag.bgm-subject-card__placeholder::before {
+    content: none;
 }
 
 .bgm-card .bgm-subject-card-state {
@@ -1047,85 +1102,100 @@
     min-height: 168px;
     overflow: hidden;
     border: 1px solid var(--pb-subject-border);
-    border-radius: 8px;
+    border-radius: 14px;
     background: var(--pb-subject-bg);
 }
 
-.bgm-card .bgm-subject-card-state--loading {
-    position: relative;
-    display: grid;
-    min-height: 178px;
-    grid-template-columns: 144px minmax(0, 1fr);
+.bgm-card .bgm-subject-card--skeleton,
+.bgm-card .bgm-subject-card--skeleton:hover {
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04), 0 8px 24px rgba(0, 0, 0, 0.06);
+    cursor: default;
+    transform: none;
 }
 
-.bgm-card .bgm-subject-card-state--loading::before {
-    content: '';
-    position: absolute;
-    z-index: 2;
-    inset: 0;
+.bgm-card .bgm-subject-card--skeleton .bgm-subject-card__obi {
+    background: var(--pb-subject-skeleton);
+    box-shadow: none;
+}
+
+/* 占位元素沿用正式卡片的类名，只把文字替换为同字号的色条 */
+.bgm-card .bgm-subject-card__placeholder {
     display: block;
-    pointer-events: none;
-    background: linear-gradient(105deg, transparent 25%, rgba(127, 127, 127, 0.1) 45%, transparent 65%);
-    background-size: 220% 100%;
-    animation: bgmCoverShimmer 1.35s ease-in-out infinite;
-}
-
-.bgm-card .bgm-subject-card-state__line {
-    display: block;
-    background: rgba(127, 127, 127, 0.13);
-}
-
-.bgm-card .bgm-subject-card-state__media {
-    position: relative;
-    z-index: 1;
-    display: block;
-    width: 112px;
-    height: 140px;
-    align-self: center;
-    justify-self: center;
-    border: 1px solid rgba(127, 127, 127, 0.12);
-    border-radius: 3px;
-    background: rgba(127, 127, 127, 0.1);
-}
-
-.bgm-card .bgm-subject-card-state__content {
-    position: relative;
-    z-index: 1;
-    display: flex;
     width: 100%;
-    min-width: 0;
-    flex-direction: column;
-    gap: 0.65rem;
-    padding: 1.15rem 1.3rem;
+    max-width: 100%;
+    flex: 0 0 auto;
+    border-color: transparent !important;
+    background: linear-gradient(var(--pb-subject-skeleton), var(--pb-subject-skeleton)) left center / 100% 0.72em no-repeat;
+    color: transparent !important;
+    opacity: 1;
+    white-space: nowrap;
+    animation: bgmSkeletonPulse 1.35s ease-in-out infinite;
 }
 
-.bgm-card .bgm-subject-card-state__line {
-    width: 100%;
-    height: 0.65rem;
-    border-radius: 3px;
+.bgm-card .bgm-subject-card__type.bgm-subject-card__placeholder,
+.bgm-card .bgm-subject-card__tag.bgm-subject-card__placeholder {
+    background-size: 100% 100%;
 }
 
-.bgm-card .bgm-subject-card-state__line--short {
-    width: 18%;
+.bgm-card .bgm-subject-card__type.bgm-subject-card__placeholder {
+    width: 2.35rem;
 }
 
-.bgm-card .bgm-subject-card-state__line--title {
-    width: 58%;
-    height: 1rem;
+.bgm-card .bgm-subject-card__kind.bgm-subject-card__placeholder {
+    width: 2.2rem;
 }
 
-.bgm-card .bgm-subject-card-state__line--subtitle {
+.bgm-card .bgm-subject-card__date.bgm-subject-card__placeholder {
+    width: 4.4rem;
+}
+
+.bgm-card .bgm-subject-card__score.bgm-subject-card__placeholder {
+    width: 4.6rem;
+}
+
+.bgm-card .bgm-subject-card__title.bgm-subject-card__placeholder {
+    width: 60%;
+}
+
+.bgm-card .bgm-subject-card__subtitle.bgm-subject-card__placeholder {
     width: 38%;
 }
 
-.bgm-card .bgm-subject-card-state__line--summary {
-    width: 82%;
-    height: 1.75rem;
+.bgm-card .bgm-subject-card__credit.bgm-subject-card__placeholder {
+    width: 46%;
+    font-size: 0.69rem;
 }
 
-.bgm-card .bgm-subject-card-state__line--meta {
-    width: 46%;
-    margin-top: auto;
+.bgm-card .bgm-subject-card__summary.bgm-subject-card__placeholder {
+    min-height: 3em;
+    background:
+        linear-gradient(var(--pb-subject-skeleton), var(--pb-subject-skeleton)) left 0.39em / 100% 0.72em no-repeat,
+        linear-gradient(var(--pb-subject-skeleton), var(--pb-subject-skeleton)) left 1.89em / 68% 0.72em no-repeat;
+}
+
+.bgm-card[data-subject-type='music'] .bgm-subject-card__summary.bgm-subject-card__placeholder {
+    min-height: 1.5em;
+    background-size: 88% 0.72em, 0 0;
+}
+
+.bgm-card .bgm-subject-card__meta.bgm-subject-card__placeholder {
+    width: 7.5rem;
+}
+
+.bgm-card .bgm-subject-card__specs.bgm-subject-card__placeholder {
+    width: 9.5rem;
+    height: 1.46rem;
+    background:
+        linear-gradient(var(--pb-subject-skeleton), var(--pb-subject-skeleton)) left top / 70% 0.42rem no-repeat,
+        linear-gradient(var(--pb-subject-skeleton), var(--pb-subject-skeleton)) left bottom / 100% 0.56rem no-repeat;
+}
+
+.bgm-card .bgm-subject-card__placeholder--short {
+    width: 2.3rem;
+}
+
+.bgm-card .bgm-subject-card__placeholder--long {
+    width: 2.9rem;
 }
 
 .bgm-card .bgm-subject-card-state--error {
@@ -1150,26 +1220,22 @@
 }
 
 @media screen and (max-width: 520px) {
-    .bgm-card .bgm-subject-card,
-    .bgm-card .bgm-subject-card-state--loading {
-        min-height: 132px;
+    .bgm-card {
+        --pb-card-poster-width: 82px;
+        --pb-card-min-height: 139px;
+        --pb-card-padding: 0.1rem 0.25rem 0.1rem 0.7rem;
     }
 
-    .bgm-card .bgm-subject-card-state--loading {
-        grid-template-columns: 102px minmax(0, 1fr);
+    .bgm-card[data-subject-type='music'] {
+        --pb-card-min-height: 146px;
     }
 
-    .bgm-card .bgm-subject-card-state__media {
-        width: 76px;
-        height: 96px;
-    }
-
-    .bgm-card .bgm-subject-card__poster {
-        width: 88px;
+    .bgm-card .bgm-subject-card {
+        padding: 8px;
+        border-radius: 12px;
     }
 
     .bgm-card[data-subject-type='music'] .bgm-subject-card {
-        min-height: 132px;
         grid-template-columns: 6px 110px minmax(0, 1fr);
     }
 
@@ -1203,21 +1269,9 @@
     .bgm-card[data-subject-type='music'] .bgm-subject-card__poster {
         width: 104px;
         height: 104px;
-        aspect-ratio: 1 / 1;
-        align-self: center;
-    }
-
-    .bgm-card .bgm-subject-card__content,
-    .bgm-card .bgm-subject-card-state__content {
-        padding: 0.62rem 0.7rem;
-    }
-
-    .bgm-card[data-subject-type='music'] .bgm-subject-card__content {
-        padding: 0.56rem 0.62rem 0.5rem;
     }
 
     .bgm-card .bgm-subject-card__summary,
-    .bgm-card .bgm-subject-card-state__line--summary,
     .bgm-card .bgm-subject-card__rating-count {
         display: none;
     }
@@ -1234,13 +1288,12 @@
         display: none;
     }
 
-    .bgm-card .bgm-subject-card__score {
-        font-size: 0.9rem;
+    .bgm-card .bgm-subject-card__score.bgm-subject-card__placeholder {
+        width: 1.7rem;
     }
 
     .bgm-card .bgm-subject-card__title {
         margin-top: 0.32rem !important;
-        font-size: 0.9rem;
     }
 
     .bgm-card .bgm-subject-card__subtitle {
@@ -1248,7 +1301,7 @@
     }
 
     .bgm-card .bgm-subject-card__kind {
-        font-size: 0.5rem;
+        font-size: 0.56rem;
     }
 
     .bgm-card .bgm-subject-card__credit {
@@ -1257,11 +1310,15 @@
     }
 
     .bgm-card .bgm-subject-card__credit-label {
-        font-size: 0.44rem;
+        font-size: 0.54rem;
     }
 
     .bgm-card .bgm-subject-card__credit-name {
-        font-size: 0.56rem;
+        font-size: 0.62rem;
+    }
+
+    .bgm-card .bgm-subject-card__credit.bgm-subject-card__placeholder {
+        font-size: 0.62rem;
     }
 
     .bgm-card .bgm-subject-card__footer {
@@ -1274,7 +1331,7 @@
         font-size: 0.64rem;
     }
 
-    .bgm-card .bgm-subject-card__tag {
+    .bgm-card .bgm-subject-card__tags {
         font-size: 0.6rem;
     }
 
@@ -1296,11 +1353,16 @@
     }
 
     .bgm-card .bgm-subject-card__spec-label {
-        font-size: 0.38rem;
+        font-size: 0.52rem;
     }
 
     .bgm-card .bgm-subject-card__spec-value {
-        font-size: 0.56rem;
+        font-size: 0.62rem;
+    }
+
+    .bgm-card .bgm-subject-card__specs.bgm-subject-card__placeholder {
+        width: 6.2rem;
+        height: 1.36rem;
     }
 
     .bgm-card[data-subject-type='music'] .bgm-subject-card__header {
@@ -1315,6 +1377,12 @@
 }
 
 /* --- 夜间模式样式追加 --- */
+
+body.theme-dark .bgm-card {
+    --pb-subject-bg: #2a2a2d;
+    --pb-subject-border: rgba(255, 255, 255, 0.06);
+    --pb-subject-text: #e5e5ea;
+}
 
 body.theme-dark .cal-tabs {
     background: #262628;
@@ -1415,7 +1483,7 @@ body.theme-dark .bgm-load-error__retry {
     .bgm-poster-card::before,
     .bgm-card .bgm-subject-card__poster::after,
     .bgm-calendar-skeleton__card::after,
-    .bgm-card .bgm-subject-card-state--loading::before {
+    .bgm-card .bgm-subject-card__placeholder {
         animation: none !important;
     }
 
