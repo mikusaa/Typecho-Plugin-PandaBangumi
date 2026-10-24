@@ -655,6 +655,23 @@ function createCalendarControls(todayId) {
     const calendarHeader = document.createElement('div');
     calendarHeader.className = 'bgm-calendar-header';
 
+    const heading = document.createElement('div');
+    heading.className = 'cal-heading';
+    heading.setAttribute('aria-hidden', 'true');
+
+    const headingDay = document.createElement('span');
+    headingDay.className = 'cal-heading__day';
+    heading.appendChild(headingDay);
+
+    const headingCount = document.createElement('span');
+    headingCount.className = 'cal-heading__count';
+    heading.appendChild(headingCount);
+
+    const headingToday = document.createElement('span');
+    headingToday.className = 'cal-heading__today';
+    headingToday.textContent = '今天';
+    heading.appendChild(headingToday);
+
     const weekPicker = document.createElement('div');
     weekPicker.className = 'cal-week-picker';
 
@@ -704,6 +721,18 @@ function createCalendarControls(todayId) {
         weekTrigger.setAttribute('aria-label', `选择星期，当前${tabButton.textContent}`);
         weekTrigger.classList.toggle('is-today', tabButton.classList.contains('is-today'));
     };
+    const updateHeading = () => {
+        if (!activeTab) return;
+        headingDay.textContent = activeTab.title;
+        headingToday.hidden = !activeTab.classList.contains('is-today');
+        const activePanel = getActivePanel();
+        if (!activePanel) {
+            headingCount.textContent = '';
+            return;
+        }
+        const count = activePanel.querySelectorAll('.bgm-poster-card').length;
+        headingCount.textContent = count > 0 ? `${String(count)} 部` : '暂无';
+    };
     const getActivePanel = () => {
         if (!panels || !activeTab) return null;
         return Array.from(panels.querySelectorAll('.cal-panel')).find(panel => (
@@ -726,11 +755,13 @@ function createCalendarControls(todayId) {
         activeTab = tabButton;
         updateWeekTrigger(activeTab);
         syncActivePanel();
+        updateHeading();
         const activePanel = getActivePanel();
         if (activePanel) loadCalendarPanelImages(activePanel);
     };
 
     updateWeekTrigger(activeTab);
+    updateHeading();
     weekTrigger.addEventListener('click', () => {
         setWeekPickerExpanded(weekPicker, !weekPicker.classList.contains('is-expanded'));
     });
@@ -745,6 +776,7 @@ function createCalendarControls(todayId) {
 
     weekPicker.appendChild(weekTrigger);
     weekPicker.appendChild(tabs);
+    calendarHeader.appendChild(heading);
     calendarHeader.appendChild(weekPicker);
 
     return {
@@ -755,8 +787,29 @@ function createCalendarControls(todayId) {
         setPanels(nextPanels) {
             panels = nextPanels;
             syncActivePanel();
+            updateHeading();
         }
     };
+}
+
+/**
+ * 创建封面卡片骨架，结构与正式卡片一致。
+ * @returns {HTMLSpanElement}
+ */
+function createPosterSkeleton() {
+    const card = document.createElement('span');
+    card.className = 'bgm-poster-card bgm-poster-card--skeleton is-cover-loading';
+    card.setAttribute('aria-hidden', 'true');
+
+    const overlay = document.createElement('span');
+    overlay.className = 'bgm-poster-card__overlay';
+    ['title', 'meta'].forEach(variant => {
+        const placeholder = document.createElement('span');
+        placeholder.className = `bgm-poster-card__placeholder bgm-poster-card__placeholder--${variant}`;
+        overlay.appendChild(placeholder);
+    });
+    card.appendChild(overlay);
+    return card;
 }
 
 /**
@@ -777,10 +830,9 @@ function createCalendarLoadingState() {
     const grid = document.createElement('div');
     grid.className = 'bgm-calendar-skeleton__grid';
     grid.setAttribute('aria-hidden', 'true');
-    for (let index = 0; index < 2; index++) {
-        const card = document.createElement('span');
-        card.className = 'bgm-calendar-skeleton__card';
-        grid.appendChild(card);
+    // 按最宽 4 列铺满一行，窄屏由 CSS 隐藏多余的骨架
+    for (let index = 0; index < 4; index++) {
+        grid.appendChild(createPosterSkeleton());
     }
     state.appendChild(grid);
 
@@ -881,7 +933,7 @@ function shouldShowPosterProgress(type, cate, hasProgress) {
 /**
  * 创建通用封面卡片
  * @param {object} item
- * @param {{type: string, cate?: string, imageUrl?: string, fallbackImageUrl?: string}} options
+ * @param {{type: string, cate?: string, imageUrl?: string, fallbackImageUrl?: string, showProgress?: boolean}} options
  * @returns {HTMLElement}
  */
 function createPosterCard(item, options) {
@@ -929,8 +981,17 @@ function createPosterCard(item, options) {
     title.className = 'bgm-poster-card__title';
     title.textContent = displayName;
 
+    const isCalendar = type === 'calendar';
+    const airBadge = isCalendar ? getAirDateBadge(item.air_date) : '';
+    if (airBadge) {
+        const badge = document.createElement('span');
+        badge.className = 'bgm-poster-card__badge';
+        badge.textContent = airBadge;
+        link.appendChild(badge);
+    }
+
     const score = Number(item.score || 0);
-    if (isCompletedCollectionType(type, cate) && Number.isFinite(score) && score > 0) {
+    if ((isCalendar || isCompletedCollectionType(type, cate)) && Number.isFinite(score) && score > 0) {
         const scoreEl = document.createElement('span');
         scoreEl.className = 'bgm-poster-card__score';
         scoreEl.textContent = `★ ${score.toFixed(1)}`;
@@ -943,7 +1004,15 @@ function createPosterCard(item, options) {
     const current = isBook ? Math.max(0, Number(item.vol_status || 0)) : epStatus;
     const totalCount = isBook ? Math.max(0, Number(item.vol_count || 0)) : count;
     const hasProgress = !isBook || current > 0 || totalCount > 0;
-    if (shouldShowPosterProgress(type, cate, hasProgress)) {
+    const showCalendarProgress = isCalendar && Boolean(options && options.showProgress);
+    const doing = Math.max(0, Number(item.doing || 0));
+    if (isCalendar && !showCalendarProgress && doing > 0) {
+        const meta = document.createElement('span');
+        meta.className = 'bgm-poster-card__meta';
+        meta.textContent = formatWatcherText(doing);
+        overlay.appendChild(meta);
+    }
+    if (shouldShowPosterProgress(type, cate, hasProgress) || showCalendarProgress) {
         const total = totalCount > 0 ? String(totalCount) : '未知';
         const unit = isBook ? ' 册' : isMusic ? ' 曲' : '';
         const progressText = document.createElement('span');
@@ -963,6 +1032,35 @@ function createPosterCard(item, options) {
 
     link.appendChild(overlay);
     return link;
+}
+
+/**
+ * 首播前后 7 天内返回开播标记，其余返回空字符串。
+ * @param {string} value
+ * @returns {string}
+ */
+function getAirDateBadge(value) {
+    const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(value || ''));
+    if (!match) return '';
+    const airTime = new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3])).getTime();
+    if (!Number.isFinite(airTime)) return '';
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const days = Math.round((airTime - today.getTime()) / (24 * 60 * 60 * 1000));
+    if (days > 0 && days <= 7) return '即将开播';
+    if (days <= 0 && days > -7) return '新开播';
+    return '';
+}
+
+/**
+ * 格式化在看人数，万以上缩写。
+ * @param {number} value
+ * @returns {string}
+ */
+function formatWatcherText(value) {
+    return value >= 10000
+        ? `${(value / 10000).toFixed(1).replace(/\.0$/, '')} 万人在看`
+        : `${String(value)} 人在看`;
 }
 
 /**
@@ -1042,6 +1140,24 @@ async function loadMoreBgm(action) {
     action.dataset.bgmLoading = '1';
     setCollectionActionState(action, 'loading');
 
+    // 首屏还没有条目时用一行封面骨架代替转圈的操作卡
+    const skeletons = [];
+    if (!listEl.querySelector('.bgm-poster-card:not(.bgm-poster-card--skeleton)')) {
+        for (let index = 0; index < 4; index++) {
+            const skeleton = createPosterSkeleton();
+            skeletons.push(skeleton);
+            listEl.insertBefore(skeleton, action);
+        }
+        action.hidden = true;
+        listEl.setAttribute('aria-busy', 'true');
+    }
+    const clearSkeletons = () => {
+        if (skeletons.length === 0) return;
+        skeletons.splice(0).forEach(skeleton => skeleton.remove());
+        action.hidden = false;
+        listEl.setAttribute('aria-busy', 'false');
+    };
+
     let offset = parseInt(listEl.dataset.bgmOffset || '0', 10);
     if (Number.isNaN(offset) || offset < 0) {
         offset = 0;
@@ -1066,6 +1182,7 @@ async function loadMoreBgm(action) {
             cards.push(card);
             fragment.appendChild(card);
         });
+        clearSkeletons();
         listEl.insertBefore(fragment, action);
         await waitForStableLayout();
         cards.forEach(card => observePosterCover(card));
@@ -1097,6 +1214,7 @@ async function loadMoreBgm(action) {
             setCollectionActionState(action, 'retry');
         }
     } finally {
+        clearSkeletons();
         removeRequestController(controller);
         delete action.dataset.bgmLoading;
     }
@@ -1156,18 +1274,25 @@ async function loadCalendar(calContainer) {
                         name_cn: title,
                         url: href,
                         img: item.img,
-                        img_fallback: item.img_fallback
+                        img_fallback: item.img_fallback,
+                        score: item.score,
+                        doing: item.doing,
+                        air_date: item.air_date,
+                        status: item.status,
+                        count: item.count
                     }, {
                         type: 'calendar',
                         imageUrl,
-                        fallbackImageUrl: item.img_fallback
+                        fallbackImageUrl: item.img_fallback,
+                        // 只看在看时后端附带收视进度
+                        showProgress: calFilter === 'watching' && item.status !== undefined
                     });
                     panel.appendChild(bangumiItem);
                 });
             } else {
                 const noItem = document.createElement('p');
                 noItem.className = 'cal-no-item';
-                noItem.textContent = '今天没有在追番哦～';
+                noItem.textContent = dayNumber === getTodayId() ? '今天没有在追番哦～' : '这天没有在追番哦～';
                 panel.appendChild(noItem);
             }
             panels.appendChild(panel);

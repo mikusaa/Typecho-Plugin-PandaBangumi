@@ -18,6 +18,7 @@ class FakeElement {
         this.dataset = {};
         this.attributes = {};
         this.className = '';
+        this.style = {};
         this.textContent = '';
         this.isConnected = true;
         this.classList = {
@@ -107,6 +108,8 @@ const renderCardError = vm.runInContext('renderCardError', sandbox);
 const createCardLoadingState = vm.runInContext('createCardLoadingState', sandbox);
 const createCalendarLoadingState = vm.runInContext('createCalendarLoadingState', sandbox);
 const createCalendarControls = vm.runInContext('createCalendarControls', sandbox);
+const getAirDateBadge = vm.runInContext('getAirDateBadge', sandbox);
+const formatWatcherText = vm.runInContext('formatWatcherText', sandbox);
 
 const calendarLoadingState = createCalendarLoadingState();
 assert.equal(calendarLoadingState.className, 'bgm-calendar-skeleton');
@@ -114,13 +117,20 @@ assert.equal(calendarLoadingState.attributes.role, 'status');
 assert.equal(calendarLoadingState.children.length, 2);
 assert.equal(calendarLoadingState.children[0].className, 'bgm-calendar-skeleton__sr-only');
 assert.equal(calendarLoadingState.children[1].className, 'bgm-calendar-skeleton__grid');
-assert.equal(calendarLoadingState.children[1].children.length, 2);
+assert.equal(calendarLoadingState.children[1].children.length, 4);
 assert.equal(calendarLoadingState.children[1].children.every(child => (
-    child.className === 'bgm-calendar-skeleton__card'
+    child.className === 'bgm-poster-card bgm-poster-card--skeleton is-cover-loading'
 )), true);
+assert.deepEqual(calendarLoadingState.children[1].children[0].children[0].children.map(child => child.className), [
+    'bgm-poster-card__placeholder bgm-poster-card__placeholder--title',
+    'bgm-poster-card__placeholder bgm-poster-card__placeholder--meta'
+]);
 
 const calendarControls = createCalendarControls(2);
 assert.equal(calendarControls.header.className, 'bgm-calendar-header');
+assert.deepEqual(calendarControls.header.children.map(child => child.className), ['cal-heading', 'cal-week-picker']);
+assert.equal(calendarControls.header.children[0].children[0].textContent, '星期二');
+assert.equal(calendarControls.header.children[0].children[2].hidden, false);
 assert.equal(calendarControls.tabs.className, 'cal-tabs');
 assert.equal(calendarControls.tabs.children.length, 7);
 assert.equal(calendarControls.tabs.children[0].textContent, '周一');
@@ -215,6 +225,46 @@ const directPoster = createPosterCard({
 }, { type: 'calendar' });
 assert.equal(directPoster.dataset.coverUrl, 'https://lain.bgm.tv/r/600/pic/cover/l/test.jpg');
 assert.equal(directPoster.dataset.coverFallbackUrl, 'https://lain.bgm.tv/pic/cover/l/test.jpg');
+
+const dateOffset = days => {
+    const date = new Date();
+    date.setDate(date.getDate() + days);
+    return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+};
+assert.equal(getAirDateBadge(dateOffset(3)), '即将开播');
+assert.equal(getAirDateBadge(dateOffset(0)), '新开播');
+assert.equal(getAirDateBadge(dateOffset(-6)), '新开播');
+assert.equal(getAirDateBadge(dateOffset(-30)), '');
+assert.equal(getAirDateBadge(dateOffset(30)), '');
+assert.equal(getAirDateBadge('2026-13'), '');
+assert.equal(formatWatcherText(2376), '2376 人在看');
+assert.equal(formatWatcherText(14230), '1.4 万人在看');
+assert.equal(formatWatcherText(20000), '2 万人在看');
+
+const findByClass = (element, className) => {
+    if (element.className.split(/\s+/).includes(className)) return element;
+    for (const child of element.children) {
+        const found = findByClass(child, className);
+        if (found) return found;
+    }
+    return null;
+};
+const calendarPoster = createPosterCard({
+    id: 302, name: 'Popular', url: 'https://bgm.tv/subject/302', score: 7.5, doing: 14230, air_date: dateOffset(-1)
+}, { type: 'calendar' });
+assert.equal(findByClass(calendarPoster, 'bgm-poster-card__badge').textContent, '新开播');
+assert.equal(findByClass(calendarPoster, 'bgm-poster-card__score').textContent, '★ 7.5');
+assert.equal(findByClass(calendarPoster, 'bgm-poster-card__meta').textContent, '1.4 万人在看');
+assert.equal(findByClass(calendarPoster, 'bgm-poster-card__progress-track'), null);
+
+const watchingPoster = createPosterCard({
+    id: 302, name: 'Popular', url: 'https://bgm.tv/subject/302', score: 0, doing: 50, status: 4, count: 12
+}, { type: 'calendar', showProgress: true });
+assert.equal(findByClass(watchingPoster, 'bgm-poster-card__badge'), null);
+assert.equal(findByClass(watchingPoster, 'bgm-poster-card__score'), null);
+assert.equal(findByClass(watchingPoster, 'bgm-poster-card__meta'), null);
+assert.equal(findByClass(watchingPoster, 'bgm-poster-card__progress-text').textContent, '4 / 12');
+assert.equal(findByClass(watchingPoster, 'bgm-poster-card__progress-bar').style.width, '33.33333333333333%');
 
 const game = normalized('game');
 assert.equal(game.typeKey, 'game');

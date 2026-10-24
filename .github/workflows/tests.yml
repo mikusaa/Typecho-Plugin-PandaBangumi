@@ -1,0 +1,42 @@
+name: Tests
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  php:
+    name: PHP ${{ matrix.php }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # 8.0 为 README 声明的最低版本
+        php: ['8.0', '8.5']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ matrix.php }}
+          coverage: none
+      - name: Lint
+        run: find . -name '*.php' -not -path './.git/*' -print0 | xargs -0 -n1 php -l
+      - name: Run tests
+        run: php tests/run.php
+
+  js:
+    name: JavaScript
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Syntax check
+        run: for file in assets/js/*.js; do node --check "$file"; done
+      - name: Run tests
+        run: node tests/subject-card.js

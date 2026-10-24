@@ -1,6 +1,46 @@
+/* 共享设计变量：条目卡片、收藏列表与日历取同一套值，夜间模式只覆盖变量 */
+.bgm-collection,
+.bgm-calendar,
+.bgm-card {
+    --pb-subject-bg: #ffffff;
+    --pb-subject-border: rgba(0, 0, 0, 0.06);
+    /* 卡片为实色底，文字色需固定，不能继承主题（深色主题下会变成浅字白底） */
+    --pb-subject-text: #24292f;
+    --pb-subject-muted: currentColor;
+    --pb-subject-accent: #c65f76;
+    --pb-subject-skeleton: rgba(127, 127, 127, 0.16);
+    --pb-poster-radius: 10px;
+    --pb-panel-radius: 14px;
+    --pb-shadow: 0 1px 2px rgba(0, 0, 0, 0.04), 0 8px 24px rgba(0, 0, 0, 0.06);
+    --pb-shadow-hover: 0 2px 4px rgba(0, 0, 0, 0.05), 0 14px 32px rgba(0, 0, 0, 0.1);
+    --pb-control-bg: rgba(127, 127, 127, 0.1);
+    --pb-control-active: #ffffff;
+    --pb-dashed-border: rgba(127, 127, 127, 0.32);
+}
+
+.bgm-collection[data-cate='book'],
+.bgm-card[data-subject-type='book'] {
+    --pb-subject-accent: #3f8b70;
+}
+
+.bgm-collection[data-cate='game'],
+.bgm-card[data-subject-type='game'] {
+    --pb-subject-accent: #4f78b8;
+}
+
+.bgm-collection[data-cate='real'],
+.bgm-card[data-subject-type='real'] {
+    --pb-subject-accent: #967343;
+}
+
+.bgm-collection[data-cate='music'] {
+    --pb-subject-accent: #9a405d;
+}
+
 /* 通用封面卡片与网格 */
 .bgm-collection,
-.cal-panel.active {
+.cal-panel.active,
+.bgm-calendar-skeleton__grid {
     display: grid;
     grid-template-columns: repeat(4, minmax(0, 1fr));
     gap: 15px;
@@ -18,26 +58,17 @@
     aspect-ratio: 2 / 3;
     overflow: hidden;
     border: none !important;
-    border-radius: 8px;
-    background: #e8e8e8;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12);
+    border-radius: var(--pb-poster-radius);
+    background: var(--pb-subject-skeleton);
+    box-shadow: var(--pb-shadow);
     color: #fff !important;
     text-decoration: none !important;
-    transition: transform 0.3s ease, box-shadow 0.3s ease;
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
 }
 
 .bgm-collection[data-cate='music'] .bgm-poster-card,
 .bgm-collection[data-cate='music'] .bgm-collection-action {
     aspect-ratio: 1 / 1;
-}
-
-.bgm-collection[data-cate='music'] .bgm-poster-card__progress-bar {
-    background: #7566a8;
-}
-
-.bgm-collection[data-cate='music'] .bgm-poster-card:focus-visible,
-.bgm-collection[data-cate='music'] .bgm-collection-action:focus-visible {
-    outline-color: #7566a8;
 }
 
 .bgm-poster-card::before,
@@ -90,7 +121,7 @@
     color: #fff;
     text-align: left;
     text-shadow: 0 1px 3px rgba(0, 0, 0, 0.75);
-    transition: opacity 0.3s ease;
+    transition: opacity 0.2s ease;
 }
 
 .bgm-poster-card__title {
@@ -113,7 +144,23 @@
     line-height: 1.2;
 }
 
-.bgm-poster-card__progress-text {
+.bgm-poster-card__badge {
+    position: absolute;
+    z-index: 3;
+    top: 8px;
+    left: 8px;
+    padding: 0.12rem 0.5rem;
+    border-radius: 999px;
+    background: var(--pb-subject-accent);
+    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.25);
+    color: #fff;
+    font-size: 0.68rem;
+    font-weight: 700;
+    line-height: 1.4;
+}
+
+.bgm-poster-card__progress-text,
+.bgm-poster-card__meta {
     display: block;
     margin-top: 0.3rem;
     font-size: 0.75rem;
@@ -131,18 +178,41 @@
     height: 3px;
     overflow: hidden;
     background: rgba(255, 255, 255, 0.35);
-    transition: opacity 0.3s ease;
+    transition: opacity 0.2s ease;
 }
 
 .bgm-poster-card__progress-bar {
     display: block;
     height: 100%;
-    background: #e800a4;
+    background: var(--pb-subject-accent);
 }
 
 .bgm-poster-card:focus-visible {
-    outline: 3px solid #e800a4;
+    outline: 3px solid var(--pb-subject-accent);
     outline-offset: 3px;
+}
+
+/* 骨架沿用封面卡片结构，只把标题换成色条 */
+.bgm-poster-card--skeleton .bgm-poster-card__overlay {
+    gap: 0.45rem;
+    background: none;
+}
+
+.bgm-poster-card__placeholder {
+    display: block;
+    height: 0.68rem;
+    border-radius: 999px;
+    background: var(--pb-subject-skeleton);
+    animation: bgmSkeletonPulse 1.35s ease-in-out infinite;
+}
+
+.bgm-poster-card__placeholder--title {
+    width: 72%;
+}
+
+.bgm-poster-card__placeholder--meta {
+    width: 38%;
+    height: 0.56rem;
 }
 
 .bgm-collection-action {
@@ -151,11 +221,12 @@
     aspect-ratio: 2 / 3;
     align-items: center;
     appearance: none;
-    background: #edf0f4;
-    border: 1px solid #dde2e8 !important;
-    border-radius: 8px;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
-    color: #596273 !important;
+    background: var(--pb-subject-bg);
+    border: 1px solid var(--pb-subject-border) !important;
+    border-radius: var(--pb-poster-radius);
+    box-shadow: var(--pb-shadow);
+    box-sizing: border-box;
+    color: var(--pb-subject-text) !important;
     cursor: pointer;
     flex-direction: column;
     font: inherit;
@@ -163,11 +234,15 @@
     padding: 1rem;
     text-align: center;
     text-decoration: none !important;
-    transition: background-color 0.3s ease, border-color 0.3s ease, box-shadow 0.3s ease, transform 0.3s ease;
+    transition: box-shadow 0.2s ease, transform 0.2s ease;
 }
 
 .bgm-collection-action:disabled {
     cursor: wait;
+}
+
+.bgm-collection-action[hidden] {
+    display: none;
 }
 
 .bgm-collection-action__icon {
@@ -178,11 +253,12 @@
     justify-content: center;
     margin-bottom: 0.75rem;
     border-radius: 50%;
-    background: #fff;
-    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.1);
-    font-size: 1.4rem;
+    background: rgba(127, 127, 127, 0.12);
+    background: color-mix(in srgb, var(--pb-subject-accent) 13%, transparent);
+    color: var(--pb-subject-accent);
+    font-size: 1.3rem;
     line-height: 1;
-    transition: transform 0.3s ease;
+    transition: transform 0.2s ease;
 }
 
 .bgm-collection-action__label {
@@ -190,20 +266,20 @@
     font-size: 0.85rem;
     font-weight: 600;
     line-height: 1.5;
+    opacity: 0.72;
 }
 
 .bgm-collection-action--loading .bgm-collection-action__icon {
     width: 28px;
     height: 28px;
-    border: 3px solid rgba(89, 98, 115, 0.2);
-    border-top-color: #e800a4;
+    border: 3px solid var(--pb-subject-skeleton);
+    border-top-color: var(--pb-subject-accent);
     background: transparent;
-    box-shadow: none;
     animation: bgmActionSpin 0.8s linear infinite;
 }
 
 .bgm-collection-action:focus-visible {
-    outline: 3px solid #e800a4;
+    outline: 3px solid var(--pb-subject-accent);
     outline-offset: 3px;
 }
 
@@ -235,25 +311,23 @@
 }
 
 @media (hover: hover) and (pointer: fine) {
-    .bgm-poster-card:hover {
+    .bgm-poster-card:not(.bgm-poster-card--skeleton):hover {
         transform: translateY(-3px);
-        box-shadow: 0 7px 16px rgba(0, 0, 0, 0.18);
+        box-shadow: var(--pb-shadow-hover);
     }
 
     .bgm-poster-card:hover .bgm-poster-card__cover {
         transform: scale(1.04);
     }
 
-    .bgm-poster-card:hover .bgm-poster-card__overlay,
+    .bgm-poster-card:not(.bgm-poster-card--skeleton):hover .bgm-poster-card__overlay,
     .bgm-poster-card:hover .bgm-poster-card__progress-track {
         opacity: 0;
     }
 
     .bgm-collection-action:not(:disabled):hover {
         transform: translateY(-3px);
-        border-color: #cfd5dd !important;
-        background: #e5e9ee;
-        box-shadow: 0 7px 16px rgba(0, 0, 0, 0.14);
+        box-shadow: var(--pb-shadow-hover);
     }
 
     .bgm-collection-action:not(:disabled):hover .bgm-collection-action__icon {
@@ -263,16 +337,27 @@
 
 @media screen and (max-width: 768px) {
     .bgm-collection,
-    .cal-panel.active {
+    .cal-panel.active,
+    .bgm-calendar-skeleton__grid {
         grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+
+    /* 骨架只铺满一行 */
+    .bgm-poster-card--skeleton:nth-child(n + 4) {
+        display: none;
     }
 }
 
 @media screen and (max-width: 450px) {
     .bgm-collection,
-    .cal-panel.active {
+    .cal-panel.active,
+    .bgm-calendar-skeleton__grid {
         grid-template-columns: repeat(2, minmax(0, 1fr));
         gap: 12px;
+    }
+
+    .bgm-poster-card--skeleton:nth-child(n + 3) {
+        display: none;
     }
 
     .bgm-poster-card__overlay {
@@ -288,10 +373,49 @@
 
 .bgm-calendar-header {
     display: flex;
-    align-items: flex-end;
-    justify-content: flex-end;
-    gap: 1.5rem;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
     margin-bottom: 1rem;
+}
+
+/* 标题区放在页面底色上，文字跟随主题颜色 */
+.cal-heading {
+    display: flex;
+    min-width: 0;
+    flex: 0 0 auto;
+    align-items: baseline;
+    gap: 0.55rem;
+}
+
+.cal-heading__day {
+    font-size: 1.05rem;
+    font-weight: 750;
+    line-height: 1.3;
+}
+
+.cal-heading__count {
+    font-size: 0.78rem;
+    font-variant-numeric: tabular-nums;
+    line-height: 1.3;
+    opacity: 0.6;
+}
+
+.cal-heading__count:empty,
+.cal-heading__today[hidden] {
+    display: none;
+}
+
+.cal-heading__today {
+    align-self: center;
+    padding: 0.14rem 0.55rem;
+    border-radius: 999px;
+    background: rgba(127, 127, 127, 0.12);
+    background: color-mix(in srgb, var(--pb-subject-accent) 13%, transparent);
+    color: var(--pb-subject-accent);
+    font-size: 0.68rem;
+    font-weight: 700;
+    line-height: 1.2;
 }
 
 .cal-week-picker {
@@ -309,12 +433,12 @@
     overflow-x: auto;
     justify-content: flex-end;
     width: max-content;
-    padding: 4px;
+    padding: 3px;
     border: none;
-    border-radius: 8px;
-    background: #f0f2f5;
+    border-radius: 999px;
+    background: var(--pb-control-bg);
     margin: 0;
-    gap: 0.2rem;
+    gap: 0.15rem;
     -webkit-overflow-scrolling: touch;
     scrollbar-width: none;
     -ms-overflow-style: none;
@@ -325,31 +449,51 @@
 }
 
 .cal-tab-button {
-    flex-shrink: 0;
-    padding: 0.45rem 0.7rem;
-    font-size: 0.9rem;
-    font-weight: 500;
-    color: #555;
-    background: none;
-    border: none;
-    border-radius: 6px;
-    cursor: pointer;
     position: relative;
-    transition: color 0.25s ease, background-color 0.25s ease, box-shadow 0.25s ease;
-}
-
-.cal-tab-button:hover {
-    color: #000;
+    flex-shrink: 0;
+    padding: 0.4rem 0.8rem;
+    border: none;
+    border-radius: 999px;
+    background: none;
+    color: inherit;
+    color: color-mix(in srgb, currentColor 68%, transparent);
+    cursor: pointer;
+    font-family: inherit;
+    font-size: 0.85rem;
+    font-weight: 500;
+    line-height: 1.4;
+    transition: color 0.2s ease, background-color 0.2s ease, box-shadow 0.2s ease;
 }
 
 .cal-tab-button.active {
-    color: #333;
-    background: #fff;
-    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.12);
+    background: var(--pb-control-active);
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12);
+    color: var(--pb-subject-text);
+    font-weight: 600;
 }
 
-.cal-tab-button.is-today {
-    color: #E800A4;
+/* 今天用强调色圆点标记，不再改变文字颜色 */
+.cal-tab-button.is-today::after {
+    content: '';
+    position: absolute;
+    bottom: 3px;
+    left: 50%;
+    width: 4px;
+    height: 4px;
+    border-radius: 50%;
+    background: var(--pb-subject-accent);
+    transform: translateX(-50%);
+}
+
+.cal-tab-button:focus-visible {
+    outline: 2px solid var(--pb-subject-accent);
+    outline-offset: 1px;
+}
+
+@media (hover: hover) and (pointer: fine) {
+    .cal-tab-button:not(.active):hover {
+        color: inherit;
+    }
 }
 
 .cal-panels {
@@ -358,7 +502,7 @@
 
 .cal-panel {
     display: none;
-    animation: fadeIn 0.5s ease;
+    animation: bgmFadeIn 0.35s ease;
 }
 
 .bgm-calendar-skeleton {
@@ -375,38 +519,10 @@
     white-space: nowrap;
 }
 
-.bgm-calendar-skeleton__card::after {
-    content: '';
-    position: absolute;
-    inset: 0;
-    pointer-events: none;
-    background: linear-gradient(105deg, transparent 25%, rgba(255, 255, 255, 0.52) 45%, transparent 65%);
-    background-size: 220% 100%;
-    animation: bgmCoverShimmer 1.35s ease-in-out infinite;
-}
-
-.bgm-calendar-skeleton__grid {
-    display: grid;
-    grid-template-columns: repeat(4, minmax(0, 1fr));
-    gap: 15px;
-    width: 100%;
-}
-
-.bgm-calendar-skeleton__card {
-    position: relative;
-    display: block;
-    width: 100%;
-    aspect-ratio: 2 / 3;
-    overflow: hidden;
-    border-radius: 8px;
-    background: #e8e8e8;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12);
-}
-
-@keyframes fadeIn {
+@keyframes bgmFadeIn {
     from {
         opacity: 0;
-        transform: translateY(10px);
+        transform: translateY(8px);
     }
 
     to {
@@ -415,35 +531,21 @@
     }
 }
 
-@media screen and (max-width: 768px) {
+@media screen and (max-width: 480px) {
     .bgm-calendar-header {
         align-items: stretch;
         flex-direction: column;
-        gap: 0.5rem;
-    }
-
-    .cal-tabs {
-        justify-content: center;
-        margin-right: auto;
-        margin-left: auto;
-    }
-
-    .cal-week-picker {
-        width: 100%;
-    }
-
-    .bgm-calendar-skeleton__grid {
-        grid-template-columns: repeat(3, minmax(0, 1fr));
-    }
-}
-
-@media screen and (max-width: 480px) {
-    .bgm-calendar-header {
         gap: 0.7rem;
+    }
+
+    /* 窄屏由星期按钮显示当前日，标题区隐藏避免重复 */
+    .cal-heading {
+        display: none;
     }
 
     .cal-week-picker {
         display: block;
+        width: 100%;
     }
 
     .cal-week-trigger {
@@ -454,24 +556,31 @@
         justify-content: center;
         gap: 0.65rem;
         margin: 0 auto;
-        padding: 0.55rem 0.9rem;
-        border: 1px solid #dde2e8;
-        border-radius: 8px;
-        background: #f0f2f5;
-        box-shadow: 0 1px 4px rgba(0, 0, 0, 0.08);
-        color: #333;
+        padding: 0.5rem 1.1rem;
+        border: none;
+        border-radius: 999px;
+        background: var(--pb-control-bg);
+        color: inherit;
         cursor: pointer;
         font: inherit;
         font-size: 0.9rem;
-        font-weight: 500;
+        font-weight: 600;
     }
 
-    .cal-week-trigger.is-today {
-        color: #e800a4;
+    .cal-week-trigger.is-today .cal-week-trigger__label::before {
+        content: '';
+        display: inline-block;
+        width: 5px;
+        height: 5px;
+        margin-right: 0.45rem;
+        border-radius: 50%;
+        background: var(--pb-subject-accent);
+        vertical-align: middle;
+        transform: translateY(-1px);
     }
 
     .cal-week-trigger:focus-visible {
-        outline: 3px solid #e800a4;
+        outline: 3px solid var(--pb-subject-accent);
         outline-offset: 3px;
     }
 
@@ -480,6 +589,7 @@
         height: 7px;
         border-right: 2px solid currentColor;
         border-bottom: 2px solid currentColor;
+        opacity: 0.6;
         transform: rotate(45deg) translate(-1px, -1px);
         transform-origin: center;
         animation: calWeekHint 0.75s ease-in-out 0.65s 2;
@@ -502,7 +612,7 @@
         visibility: hidden;
         overflow: hidden;
         margin: 0 auto;
-        padding: 0 4px;
+        padding: 0 3px;
         opacity: 0;
         transform: translateY(-6px);
         transition: max-height 0.22s ease, margin-top 0.22s ease, padding 0.22s ease, opacity 0.18s ease, transform 0.22s ease, visibility 0s linear 0.22s;
@@ -512,7 +622,7 @@
         max-height: 64px;
         visibility: visible;
         margin-top: 0.55rem;
-        padding: 4px;
+        padding: 3px;
         opacity: 1;
         transform: translateY(0);
         transition-delay: 0s;
@@ -522,13 +632,6 @@
         min-width: 0;
         padding: 0.48rem 0.05rem;
         font-size: 0.78rem;
-    }
-}
-
-@media screen and (max-width: 450px) {
-    .bgm-calendar-skeleton__grid {
-        grid-template-columns: repeat(2, minmax(0, 1fr));
-        gap: 12px;
     }
 }
 
@@ -543,11 +646,15 @@
 }
 
 .cal-no-item {
-    color: #a0aec0;
-    font-size: 1rem;
-    text-align: center;
-    padding: 2rem 0;
     grid-column: 1 / -1;
+    margin: 0;
+    padding: 2.5rem 1rem;
+    border: 1px dashed var(--pb-dashed-border);
+    border-radius: var(--pb-panel-radius);
+    color: inherit;
+    color: color-mix(in srgb, currentColor 55%, transparent);
+    font-size: 0.9rem;
+    text-align: center;
 }
 
 .bgm-load-error {
@@ -555,7 +662,10 @@
     justify-items: center;
     gap: 0.75rem;
     padding: 2rem 1rem;
+    border: 1px dashed rgba(181, 74, 74, 0.35);
+    border-radius: var(--pb-panel-radius);
     color: #b54a4a;
+    font-size: 0.9rem;
     text-align: center;
 }
 
@@ -565,29 +675,33 @@
 
 .bgm-load-error__retry {
     appearance: none;
-    padding: 0.45rem 0.85rem;
-    border: 1px solid #cfd5dd;
-    border-radius: 6px;
-    background: #fff;
-    color: #333;
+    padding: 0.4rem 1rem;
+    border: 1px solid var(--pb-subject-border);
+    border-radius: 999px;
+    background: var(--pb-subject-bg);
+    box-shadow: var(--pb-shadow);
+    color: var(--pb-subject-text);
     cursor: pointer;
     font: inherit;
+    font-size: 0.85rem;
+    font-weight: 600;
+    transition: box-shadow 0.2s ease, transform 0.2s ease;
 }
 
 .bgm-load-error__retry:focus-visible {
-    outline: 3px solid #e800a4;
+    outline: 3px solid var(--pb-subject-accent);
     outline-offset: 2px;
+}
+
+@media (hover: hover) and (pointer: fine) {
+    .bgm-load-error__retry:hover {
+        transform: translateY(-1px);
+        box-shadow: var(--pb-shadow-hover);
+    }
 }
 
 /* --- Bangumi 单部 Subject 卡片 --- */
 .bgm-card {
-    --pb-subject-bg: #ffffff;
-    --pb-subject-border: rgba(0, 0, 0, 0.06);
-    /* 卡片为实色底，文字色需固定，不能继承主题（深色主题下会变成浅字白底） */
-    --pb-subject-text: #24292f;
-    --pb-subject-muted: currentColor;
-    --pb-subject-accent: #c65f76;
-    --pb-subject-skeleton: rgba(127, 127, 127, 0.16);
     --pb-card-poster-width: 104px;
     --pb-card-min-height: 176px;
     --pb-card-padding: 0.25rem 0.55rem 0.2rem 0.85rem;
@@ -601,18 +715,6 @@
 .bgm-card,
 .bgm-card * {
     box-sizing: border-box;
-}
-
-.bgm-card[data-subject-type='book'] {
-    --pb-subject-accent: #3f8b70;
-}
-
-.bgm-card[data-subject-type='game'] {
-    --pb-subject-accent: #4f78b8;
-}
-
-.bgm-card[data-subject-type='real'] {
-    --pb-subject-accent: #967343;
 }
 
 .bgm-card[data-subject-type='music'] {
@@ -636,16 +738,24 @@
     border: 1px solid var(--pb-subject-border) !important;
     border-radius: 14px;
     background: var(--pb-subject-bg);
-    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04), 0 8px 24px rgba(0, 0, 0, 0.06);
+    box-shadow: var(--pb-shadow);
     color: var(--pb-subject-text) !important;
     font-family: inherit;
     text-decoration: none !important;
     transition: border-color 0.2s ease, box-shadow 0.2s ease, transform 0.2s ease;
 }
 
-.bgm-card .bgm-subject-card:hover {
-    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05), 0 14px 32px rgba(0, 0, 0, 0.1);
-    transform: translateY(-3px);
+@media (hover: hover) and (pointer: fine) {
+    .bgm-card .bgm-subject-card:hover {
+        box-shadow: var(--pb-shadow-hover);
+        transform: translateY(-3px);
+    }
+
+    .bgm-card .bgm-subject-card:hover .bgm-subject-card__external {
+        color: var(--pb-subject-accent);
+        opacity: 1;
+        transform: translate(1px, -1px);
+    }
 }
 
 .bgm-card .bgm-subject-card:focus-visible {
@@ -903,12 +1013,6 @@
     transition: color 0.2s ease, opacity 0.2s ease, transform 0.2s ease;
 }
 
-.bgm-card .bgm-subject-card:hover .bgm-subject-card__external {
-    color: var(--pb-subject-accent);
-    opacity: 1;
-    transform: translate(1px, -1px);
-}
-
 .bgm-card .bgm-subject-card__title,
 .bgm-card .bgm-subject-card__subtitle,
 .bgm-card .bgm-subject-card__summary {
@@ -1108,7 +1212,7 @@
 
 .bgm-card .bgm-subject-card--skeleton,
 .bgm-card .bgm-subject-card--skeleton:hover {
-    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04), 0 8px 24px rgba(0, 0, 0, 0.06);
+    box-shadow: var(--pb-shadow);
     cursor: default;
     transform: none;
 }
@@ -1378,120 +1482,53 @@
 
 /* --- 夜间模式样式追加 --- */
 
+body.theme-dark .bgm-collection,
+body.theme-dark .bgm-calendar,
 body.theme-dark .bgm-card {
     --pb-subject-bg: #2a2a2d;
     --pb-subject-border: rgba(255, 255, 255, 0.06);
     --pb-subject-text: #e5e5ea;
-}
-
-body.theme-dark .cal-tabs {
-    background: #262628;
-}
-
-body.theme-dark .bgm-calendar-skeleton__card {
-    background: #2c2c2e;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.6);
-}
-
-body.theme-dark .bgm-calendar-skeleton__card::after {
-    background-image: linear-gradient(105deg, transparent 25%, rgba(255, 255, 255, 0.12) 45%, transparent 65%);
-}
-
-body.theme-dark .cal-tab-button {
-    color: #a9a9a9;
-}
-
-body.theme-dark .cal-tab-button:hover {
-    color: #ffffff;
-}
-
-body.theme-dark .cal-tab-button.active {
-    color: #ffffff;
-    background: #3a3a3c;
-    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.45);
-}
-
-body.theme-dark .cal-tab-button.is-today {
-    color: #ff69c8;
-}
-
-body.theme-dark .cal-week-trigger {
-    border-color: #3a3a3c;
-    background: #262628;
-    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.35);
-    color: #d1d1d6;
-}
-
-body.theme-dark .cal-week-trigger.is-today {
-    color: #ff69c8;
-}
-
-body.theme-dark .bgm-poster-card {
-    background-color: #2c2c2e;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.6);
+    --pb-shadow: 0 1px 2px rgba(0, 0, 0, 0.3), 0 8px 24px rgba(0, 0, 0, 0.32);
+    --pb-shadow-hover: 0 2px 4px rgba(0, 0, 0, 0.35), 0 14px 32px rgba(0, 0, 0, 0.5);
+    --pb-control-active: #3a3a3c;
 }
 
 body.theme-dark .bgm-poster-card::before {
     background-image: linear-gradient(105deg, transparent 28%, rgba(255, 255, 255, 0.12) 45%, transparent 62%);
 }
 
-body.theme-dark .bgm-collection-action {
-    border-color: #3a3a3c !important;
-    background: #2c2c2e;
-    color: #d1d1d6 !important;
-}
-
-body.theme-dark .bgm-collection-action__icon {
-    background: #3a3a3c;
-    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.4);
-}
-
-body.theme-dark .bgm-collection-action--loading .bgm-collection-action__icon {
-    border-color: rgba(209, 209, 214, 0.2);
-    border-top-color: #ff69c8;
-    background: transparent;
-    box-shadow: none;
-}
-
-@media (hover: hover) and (pointer: fine) {
-    body.theme-dark .bgm-poster-card:hover {
-        box-shadow: 0 7px 16px rgba(0, 0, 0, 0.7);
-    }
-
-    body.theme-dark .bgm-collection-action:not(:disabled):hover {
-        border-color: #505054 !important;
-        background: #343437;
-        box-shadow: 0 7px 16px rgba(0, 0, 0, 0.6);
-    }
-}
-
-body.theme-dark .cal-no-item {
-    color: #888888;
+body.theme-dark .cal-tab-button.active {
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.45);
 }
 
 body.theme-dark .bgm-load-error {
+    border-color: rgba(255, 143, 143, 0.3);
     color: #ff8f8f;
-}
-
-body.theme-dark .bgm-load-error__retry {
-    border-color: #505054;
-    background: #343437;
-    color: #f2f2f2;
 }
 
 @media (prefers-reduced-motion: reduce) {
     .bgm-poster-card::before,
     .bgm-card .bgm-subject-card__poster::after,
-    .bgm-calendar-skeleton__card::after,
-    .bgm-card .bgm-subject-card__placeholder {
+    .bgm-poster-card__placeholder,
+    .bgm-card .bgm-subject-card__placeholder,
+    .cal-panel {
         animation: none !important;
     }
 
+    .bgm-poster-card,
     .bgm-poster-card__cover,
+    .bgm-collection-action,
     .bgm-card .bgm-subject-card,
     .bgm-card .bgm-subject-card__image,
     .bgm-card .bgm-subject-card__external {
         transition: none;
+    }
+
+    .bgm-poster-card:hover,
+    .bgm-poster-card:hover .bgm-poster-card__cover,
+    .bgm-collection-action:hover,
+    .bgm-card .bgm-subject-card:hover {
+        transform: none !important;
     }
 
     .cal-week-trigger__chevron {

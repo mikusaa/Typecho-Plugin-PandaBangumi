@@ -208,6 +208,10 @@ namespace {
     function setBangumiApiService(string $property, mixed $value): void
     {
         $reflection = new ReflectionProperty(BangumiAPI::class, $property);
+        // PHP 8.1 起私有属性默认可写，setAccessible 在 8.5 被弃用
+        if (PHP_VERSION_ID < 80100) {
+            $reflection->setAccessible(true);
+        }
         $reflection->setValue(null, $value);
     }
 
@@ -1458,9 +1462,130 @@ namespace {
             );
 
             $result = json_decode($calendar->update('tester', 'watching', 60), true);
-            assertTrueValue(array_is_list($result[0]['items']));
+            assertTrueValue($result[0]['items'] === array_values($result[0]['items']));
             assertSameValue(array(999), array_column($result[0]['items'], 'id'));
             assertSameValue(2, count($http->urls));
+        } finally {
+            removeTestDirectory($directory);
+        }
+    });
+
+    $calendarDetailResponse = static fn(): string => (string)json_encode(array(array(
+        'weekday' => array('id' => 1, 'en' => 'Mon', 'cn' => 'Monday'),
+        'items' => array(
+            array(
+                'id' => 301,
+                'name' => 'Few Votes',
+                'air_date' => '2026-10-05',
+                'rating' => array('total' => 9, 'score' => 8.8),
+                'collection' => array('doing' => 5)
+            ),
+            array(
+                'id' => 302,
+                'name' => 'Popular',
+                'air_date' => '2026-04-03',
+                'rating' => array('total' => 120, 'score' => 7.46),
+                'collection' => array('doing' => 50)
+            ),
+            array(
+                'id' => 303,
+                'name' => 'Tied',
+                'air_date' => 'not-a-date',
+                'collection' => array('doing' => 50)
+            ),
+            array(
+                'id' => 304,
+                'name' => 'Malformed',
+                'rating' => 'broken',
+                'collection' => 'broken'
+            )
+        )
+    )), JSON_UNESCAPED_UNICODE);
+
+    $test('Calendar keeps rating, watchers and air date sorted by watchers', static function () use ($calendarDetailResponse): void {
+        $directory = testDirectory();
+        try {
+            $pluginConfig = config(array('Limit' => 2, 'ImageMode' => 'direct'));
+            $cacheStore = new CacheStore($directory, static fn(): int => 1000);
+            $http = new FakeHttpTransport(array($calendarDetailResponse()));
+            $cover = coverService($pluginConfig, $cacheStore);
+            $collection = collectionService($pluginConfig, $http, $cacheStore, $cover);
+            $calendar = new CalendarService($pluginConfig, $http, $cacheStore, $cover, $collection, CALENDAR_VARIANT);
+
+            $items = json_decode($calendar->update('tester', 'all', 60), true)[0]['items'];
+            assertSameValue(array(302, 303, 301, 304), array_column($items, 'id'), 'sorted by watchers, ties keep order');
+            assertSameValue(array(7.5, 0, 0, 0), array_column($items, 'score'), 'score needs ten ratings');
+            assertSameValue(array(50, 50, 5, 0), array_column($items, 'doing'));
+            assertSameValue(array('2026-04-03', '', '2026-10-05', ''), array_column($items, 'air_date'));
+            assertSameValue(false, array_key_exists('status', $items[0]), 'all filter has no progress');
+            assertSameValue('fields-v1', $cacheStore->read($cacheStore->dataPath('calendar.php'))['data_variant']);
+        } finally {
+            removeTestDirectory($directory);
+        }
+    });
+
+    $test('Watching calendar attaches collection progress', static function () use ($calendarDetailResponse): void {
+        $directory = testDirectory();
+        try {
+            $pluginConfig = config(array('Limit' => 2, 'ImageMode' => 'direct'));
+            $cacheStore = new CacheStore($directory, static fn(): int => 1000);
+            $collectionJson = (string)json_encode(array(
+                'total' => 2,
+                'limit' => 30,
+                'offset' => 0,
+                'data' => array(
+                    array('ep_status' => 0, 'vol_status' => 0, 'subject' => array('id' => 301, 'name' => 'Few Votes', 'eps' => 0)),
+                    array('ep_status' => 4, 'vol_status' => 0, 'subject' => array('id' => 302, 'name' => 'Popular', 'eps' => 12))
+                )
+            ));
+            $http = new FakeHttpTransport(array($calendarDetailResponse(), $collectionJson));
+            $cover = coverService($pluginConfig, $cacheStore);
+            $collection = collectionService($pluginConfig, $http, $cacheStore, $cover);
+            $calendar = new CalendarService($pluginConfig, $http, $cacheStore, $cover, $collection, CALENDAR_VARIANT);
+
+            $items = json_decode($calendar->update('tester', 'watching', 60), true)[0]['items'];
+            assertSameValue(array(302, 301), array_column($items, 'id'));
+            assertSameValue(array(4, 0), array_column($items, 'status'));
+            assertSameValue(array(12, 0), array_column($items, 'count'));
+            assertSameValue(50, $items[0]['doing']);
+        } finally {
+            removeTestDirectory($directory);
+        }
+    });
+
+    $test('Calendar refreshes legacy caches but serves them when refresh fails', static function () use ($calendarDetailResponse): void {
+        $directory = testDirectory();
+        try {
+            $pluginConfig = config(array('Limit' => 2, 'ImageMode' => 'direct'));
+            $cacheStore = new CacheStore($directory, static fn(): int => 1000);
+            $calendarPath = $cacheStore->dataPath('calendar.php');
+            $legacy = array(
+                'time' => 990,
+                'image_variant' => CALENDAR_VARIANT,
+                'data' => array(array(
+                    'id' => 1,
+                    'date_en' => 'Mon',
+                    'date_cn' => 'Monday',
+                    'items' => array(array('id' => 101, 'name' => 'Legacy', 'images' => array()))
+                ))
+            );
+            $cover = coverService($pluginConfig, $cacheStore);
+
+            $cacheStore->write($calendarPath, $legacy);
+            $http = new FakeHttpTransport(array($calendarDetailResponse()));
+            $collection = collectionService($pluginConfig, $http, $cacheStore, $cover);
+            $calendar = new CalendarService($pluginConfig, $http, $cacheStore, $cover, $collection, CALENDAR_VARIANT);
+            $items = json_decode($calendar->update('tester', 'all', 60), true)[0]['items'];
+            assertSameValue(1, count($http->urls), 'fresh legacy cache is refreshed');
+            assertSameValue(302, $items[0]['id']);
+
+            $cacheStore->write($calendarPath, $legacy);
+            $failing = new FakeHttpTransport(array(false));
+            $collection = collectionService($pluginConfig, $failing, $cacheStore, $cover);
+            $calendar = new CalendarService($pluginConfig, $failing, $cacheStore, $cover, $collection, CALENDAR_VARIANT);
+            $items = json_decode($calendar->update('tester', 'all', 60), true)[0]['items'];
+            assertSameValue(array(101), array_column($items, 'id'), 'legacy cache is the fallback');
+            assertTrueValue(isset($cacheStore->read($calendarPath)['retry_after']));
         } finally {
             removeTestDirectory($directory);
         }
