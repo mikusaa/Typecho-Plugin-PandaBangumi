@@ -114,13 +114,20 @@ assert.equal(calendarLoadingState.attributes.role, 'status');
 assert.equal(calendarLoadingState.children.length, 2);
 assert.equal(calendarLoadingState.children[0].className, 'bgm-calendar-skeleton__sr-only');
 assert.equal(calendarLoadingState.children[1].className, 'bgm-calendar-skeleton__grid');
-assert.equal(calendarLoadingState.children[1].children.length, 2);
+assert.equal(calendarLoadingState.children[1].children.length, 4);
 assert.equal(calendarLoadingState.children[1].children.every(child => (
-    child.className === 'bgm-calendar-skeleton__card'
+    child.className === 'bgm-poster-card bgm-poster-card--skeleton is-cover-loading'
 )), true);
+assert.deepEqual(calendarLoadingState.children[1].children[0].children[0].children.map(child => child.className), [
+    'bgm-poster-card__placeholder bgm-poster-card__placeholder--title',
+    'bgm-poster-card__placeholder bgm-poster-card__placeholder--meta'
+]);
 
 const calendarControls = createCalendarControls(2);
 assert.equal(calendarControls.header.className, 'bgm-calendar-header');
+assert.deepEqual(calendarControls.header.children.map(child => child.className), ['cal-heading', 'cal-week-picker']);
+assert.equal(calendarControls.header.children[0].children[0].textContent, '星期二');
+assert.equal(calendarControls.header.children[0].children[2].hidden, false);
 assert.equal(calendarControls.tabs.className, 'cal-tabs');
 assert.equal(calendarControls.tabs.children.length, 7);
 assert.equal(calendarControls.tabs.children[0].textContent, '周一');

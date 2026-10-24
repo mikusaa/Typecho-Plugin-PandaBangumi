@@ -655,6 +655,23 @@ function createCalendarControls(todayId) {
     const calendarHeader = document.createElement('div');
     calendarHeader.className = 'bgm-calendar-header';
 
+    const heading = document.createElement('div');
+    heading.className = 'cal-heading';
+    heading.setAttribute('aria-hidden', 'true');
+
+    const headingDay = document.createElement('span');
+    headingDay.className = 'cal-heading__day';
+    heading.appendChild(headingDay);
+
+    const headingCount = document.createElement('span');
+    headingCount.className = 'cal-heading__count';
+    heading.appendChild(headingCount);
+
+    const headingToday = document.createElement('span');
+    headingToday.className = 'cal-heading__today';
+    headingToday.textContent = '今天';
+    heading.appendChild(headingToday);
+
     const weekPicker = document.createElement('div');
     weekPicker.className = 'cal-week-picker';
 
@@ -704,6 +721,18 @@ function createCalendarControls(todayId) {
         weekTrigger.setAttribute('aria-label', `选择星期，当前${tabButton.textContent}`);
         weekTrigger.classList.toggle('is-today', tabButton.classList.contains('is-today'));
     };
+    const updateHeading = () => {
+        if (!activeTab) return;
+        headingDay.textContent = activeTab.title;
+        headingToday.hidden = !activeTab.classList.contains('is-today');
+        const activePanel = getActivePanel();
+        if (!activePanel) {
+            headingCount.textContent = '';
+            return;
+        }
+        const count = activePanel.querySelectorAll('.bgm-poster-card').length;
+        headingCount.textContent = count > 0 ? `${String(count)} 部` : '暂无';
+    };
     const getActivePanel = () => {
         if (!panels || !activeTab) return null;
         return Array.from(panels.querySelectorAll('.cal-panel')).find(panel => (
@@ -726,11 +755,13 @@ function createCalendarControls(todayId) {
         activeTab = tabButton;
         updateWeekTrigger(activeTab);
         syncActivePanel();
+        updateHeading();
         const activePanel = getActivePanel();
         if (activePanel) loadCalendarPanelImages(activePanel);
     };
 
     updateWeekTrigger(activeTab);
+    updateHeading();
     weekTrigger.addEventListener('click', () => {
         setWeekPickerExpanded(weekPicker, !weekPicker.classList.contains('is-expanded'));
     });
@@ -745,6 +776,7 @@ function createCalendarControls(todayId) {
 
     weekPicker.appendChild(weekTrigger);
     weekPicker.appendChild(tabs);
+    calendarHeader.appendChild(heading);
     calendarHeader.appendChild(weekPicker);
 
     return {
@@ -755,8 +787,29 @@ function createCalendarControls(todayId) {
         setPanels(nextPanels) {
             panels = nextPanels;
             syncActivePanel();
+            updateHeading();
         }
     };
+}
+
+/**
+ * 创建封面卡片骨架，结构与正式卡片一致。
+ * @returns {HTMLSpanElement}
+ */
+function createPosterSkeleton() {
+    const card = document.createElement('span');
+    card.className = 'bgm-poster-card bgm-poster-card--skeleton is-cover-loading';
+    card.setAttribute('aria-hidden', 'true');
+
+    const overlay = document.createElement('span');
+    overlay.className = 'bgm-poster-card__overlay';
+    ['title', 'meta'].forEach(variant => {
+        const placeholder = document.createElement('span');
+        placeholder.className = `bgm-poster-card__placeholder bgm-poster-card__placeholder--${variant}`;
+        overlay.appendChild(placeholder);
+    });
+    card.appendChild(overlay);
+    return card;
 }
 
 /**
@@ -777,10 +830,9 @@ function createCalendarLoadingState() {
     const grid = document.createElement('div');
     grid.className = 'bgm-calendar-skeleton__grid';
     grid.setAttribute('aria-hidden', 'true');
-    for (let index = 0; index < 2; index++) {
-        const card = document.createElement('span');
-        card.className = 'bgm-calendar-skeleton__card';
-        grid.appendChild(card);
+    // 按最宽 4 列铺满一行，窄屏由 CSS 隐藏多余的骨架
+    for (let index = 0; index < 4; index++) {
+        grid.appendChild(createPosterSkeleton());
     }
     state.appendChild(grid);
 
@@ -1042,6 +1094,24 @@ async function loadMoreBgm(action) {
     action.dataset.bgmLoading = '1';
     setCollectionActionState(action, 'loading');
 
+    // 首屏还没有条目时用一行封面骨架代替转圈的操作卡
+    const skeletons = [];
+    if (!listEl.querySelector('.bgm-poster-card:not(.bgm-poster-card--skeleton)')) {
+        for (let index = 0; index < 4; index++) {
+            const skeleton = createPosterSkeleton();
+            skeletons.push(skeleton);
+            listEl.insertBefore(skeleton, action);
+        }
+        action.hidden = true;
+        listEl.setAttribute('aria-busy', 'true');
+    }
+    const clearSkeletons = () => {
+        if (skeletons.length === 0) return;
+        skeletons.splice(0).forEach(skeleton => skeleton.remove());
+        action.hidden = false;
+        listEl.setAttribute('aria-busy', 'false');
+    };
+
     let offset = parseInt(listEl.dataset.bgmOffset || '0', 10);
     if (Number.isNaN(offset) || offset < 0) {
         offset = 0;
@@ -1066,6 +1136,7 @@ async function loadMoreBgm(action) {
             cards.push(card);
             fragment.appendChild(card);
         });
+        clearSkeletons();
         listEl.insertBefore(fragment, action);
         await waitForStableLayout();
         cards.forEach(card => observePosterCover(card));
@@ -1097,6 +1168,7 @@ async function loadMoreBgm(action) {
             setCollectionActionState(action, 'retry');
         }
     } finally {
+        clearSkeletons();
         removeRequestController(controller);
         delete action.dataset.bgmLoading;
     }
@@ -1167,7 +1239,7 @@ async function loadCalendar(calContainer) {
             } else {
                 const noItem = document.createElement('p');
                 noItem.className = 'cal-no-item';
-                noItem.textContent = '今天没有在追番哦～';
+                noItem.textContent = dayNumber === getTodayId() ? '今天没有在追番哦～' : '这天没有在追番哦～';
                 panel.appendChild(noItem);
             }
             panels.appendChild(panel);
