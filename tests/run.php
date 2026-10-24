@@ -208,6 +208,10 @@ namespace {
     function setBangumiApiService(string $property, mixed $value): void
     {
         $reflection = new ReflectionProperty(BangumiAPI::class, $property);
+        // PHP 8.1 起私有属性默认可写，setAccessible 在 8.5 被弃用
+        if (PHP_VERSION_ID < 80100) {
+            $reflection->setAccessible(true);
+        }
         $reflection->setValue(null, $value);
     }
 
