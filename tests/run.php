@@ -1458,7 +1458,7 @@ namespace {
             );
 
             $result = json_decode($calendar->update('tester', 'watching', 60), true);
-            assertTrueValue(array_is_list($result[0]['items']));
+            assertTrueValue($result[0]['items'] === array_values($result[0]['items']));
             assertSameValue(array(999), array_column($result[0]['items'], 'id'));
             assertSameValue(2, count($http->urls));
         } finally {
