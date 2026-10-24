@@ -21,11 +21,11 @@ if (!defined('__TYPECHO_ROOT_DIR__')) {
  *
  * @package PandaBangumi
  * @author mikusa
- * @version 4.0.1
+ * @version 4.1.0
  * @link https://www.himiku.com/archives/pandabangumi.html
  */
 
-define('PandaBangumi_Plugin_VERSION', '4.0.1');
+define('PandaBangumi_Plugin_VERSION', '4.1.0');
 
 class Plugin implements PluginInterface
 {
