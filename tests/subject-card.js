@@ -129,14 +129,53 @@ assert.equal(calendarControls.tabs.children[1].classList.contains('active'), tru
 assert.equal(calendarControls.tabs.children[1].attributes['aria-current'], 'date');
 
 const loadingState = createCardLoadingState();
-assert.equal(loadingState.className, 'bgm-subject-card-state bgm-subject-card-state--loading');
+assert.equal(loadingState.className, 'bgm-subject-card bgm-subject-card--skeleton');
 assert.equal(loadingState.attributes.role, 'status');
 assert.equal(loadingState.children.length, 3);
 assert.equal(loadingState.children[0].textContent, '正在从 Bangumi 加载条目信息...');
-assert.equal(loadingState.children[1].className, 'bgm-subject-card-state__media');
-assert.equal(loadingState.children[2].className, 'bgm-subject-card-state__content');
-assert.equal(loadingState.children[2].children.length, 5);
-assert.equal(loadingState.children.some(child => child.className === 'bgm-subject-card-state__poster'), false);
+assert.equal(loadingState.children[1].className, 'bgm-subject-card__poster is-cover-loading');
+const loadingContent = loadingState.children[2];
+assert.equal(loadingContent.className, 'bgm-subject-card__content');
+assert.deepEqual(loadingContent.children.map(child => child.className), [
+    'bgm-subject-card__header',
+    'bgm-subject-card__title bgm-subject-card__placeholder',
+    'bgm-subject-card__subtitle bgm-subject-card__placeholder',
+    'bgm-subject-card__summary bgm-subject-card__placeholder',
+    'bgm-subject-card__footer'
+]);
+assert.equal(loadingContent.children[0].children[0].children[0].className, 'bgm-subject-card__type bgm-subject-card__placeholder');
+assert.equal(loadingContent.children[4].children[0].className, 'bgm-subject-card__meta bgm-subject-card__placeholder');
+assert.equal(loadingContent.children[4].children[1].children.length, 3);
+
+const musicLoadingState = createCardLoadingState('music');
+assert.deepEqual(musicLoadingState.children.slice(1).map(child => child.className), [
+    'bgm-subject-card__obi',
+    'bgm-subject-card__case',
+    'bgm-subject-card__content'
+]);
+assert.equal(musicLoadingState.children[2].children[0].className, 'bgm-subject-card__poster is-cover-loading');
+const musicLoadingContent = musicLoadingState.children[3];
+assert.equal(musicLoadingContent.children[0].children[0].children[0].className, 'bgm-subject-card__kind bgm-subject-card__placeholder');
+assert.equal(musicLoadingContent.children[2].className, 'bgm-subject-card__credit bgm-subject-card__placeholder');
+assert.equal(musicLoadingContent.children[4].children[0].className, 'bgm-subject-card__specs bgm-subject-card__placeholder');
+
+const storage = new Map();
+sandbox.window.localStorage = {
+    getItem: key => (storage.has(key) ? storage.get(key) : null),
+    setItem: (key, value) => storage.set(key, String(value))
+};
+const rememberSubjectType = vm.runInContext('rememberSubjectType', sandbox);
+const getRememberedSubjectType = vm.runInContext('getRememberedSubjectType', sandbox);
+assert.equal(getRememberedSubjectType(501), '');
+rememberSubjectType(501, 'music');
+assert.equal(getRememberedSubjectType(501), 'music');
+for (let id = 1000; id < 1200; id++) rememberSubjectType(id, 'anime');
+assert.equal(getRememberedSubjectType(501), '');
+assert.equal(getRememberedSubjectType(1199), 'anime');
+assert.equal(Object.keys(JSON.parse(storage.get('PandaBangumi:subjectTypes'))).length, 200);
+storage.set('PandaBangumi:subjectTypes', '{broken');
+assert.equal(getRememberedSubjectType(1199), '');
+delete sandbox.window.localStorage;
 
 function normalized(name) {
     const fixture = fixtures[name];

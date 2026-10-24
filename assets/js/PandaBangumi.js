@@ -1211,19 +1211,86 @@ async function loadCalendar(calContainer) {
 async function loadBgmCard() {
     const cards = document.querySelectorAll('.bgm-card:not([data-bgm-loaded="1"]):not([data-bgm-loading="1"])');
 
-    for (const card of cards) {
+    // 所有卡片立即显示骨架，实际请求并发由 requestQueue 控制。
+    await Promise.allSettled(Array.from(cards).map(card => {
         const id = card.getAttribute('data-id');
-        if (id) await renderCard(id, card);
+        return id ? renderCard(id, card) : Promise.resolve();
+    }));
+}
+
+const SUBJECT_TYPE_STORAGE_KEY = 'PandaBangumi:subjectTypes';
+const SUBJECT_TYPE_STORAGE_LIMIT = 200;
+
+/**
+ * 读取浏览器中记住的条目类型表
+ * @returns {Record<string, string>}
+ */
+function readRememberedSubjectTypes() {
+    try {
+        const stored = JSON.parse(window.localStorage.getItem(SUBJECT_TYPE_STORAGE_KEY) || '{}');
+        return stored && typeof stored === 'object' && !Array.isArray(stored) ? stored : {};
+    } catch (error) {
+        return {};
     }
 }
 
 /**
- * 创建尚未获知条目类型时的中性加载状态
+ * 获取此前渲染过的条目类型，用于选择对应的加载骨架
+ * @param {number} subjectId
+ * @returns {string}
+ */
+function getRememberedSubjectType(subjectId) {
+    const typeKey = readRememberedSubjectTypes()[String(subjectId)];
+    return typeof typeKey === 'string' && /^[a-z]+$/.test(typeKey) ? typeKey : '';
+}
+
+/**
+ * 记住条目类型，超出上限时淘汰最早写入的记录
+ * @param {number} subjectId
+ * @param {string} typeKey
+ */
+function rememberSubjectType(subjectId, typeKey) {
+    const types = readRememberedSubjectTypes();
+    const key = String(subjectId);
+    if (types[key] === typeKey) return;
+
+    delete types[key];
+    types[key] = typeKey;
+    const keys = Object.keys(types);
+    keys.slice(0, Math.max(0, keys.length - SUBJECT_TYPE_STORAGE_LIMIT)).forEach(oldKey => {
+        delete types[oldKey];
+    });
+    try {
+        window.localStorage.setItem(SUBJECT_TYPE_STORAGE_KEY, JSON.stringify(types));
+    } catch (error) {
+        // 隐私模式或存储被禁用时仅使用默认骨架。
+    }
+}
+
+/**
+ * 创建骨架占位元素，复用正式卡片的类名以继承相同的字号、行高与间距
+ * @param {string} tagName
+ * @param {string} className
+ * @param {string} [variant]
  * @returns {HTMLElement}
  */
-function createCardLoadingState() {
+function createCardPlaceholder(tagName, className, variant) {
+    const placeholder = document.createElement(tagName);
+    placeholder.className = `${className} bgm-subject-card__placeholder`;
+    if (variant) placeholder.classList.add(`bgm-subject-card__placeholder--${variant}`);
+    placeholder.textContent = '​';
+    return placeholder;
+}
+
+/**
+ * 创建与正式卡片结构一致的加载骨架
+ * @param {string} [typeKey] 已知的条目类型；未知时使用通用卡片布局
+ * @returns {HTMLElement}
+ */
+function createCardLoadingState(typeKey) {
+    const isMusic = typeKey === 'music';
     const loading = document.createElement('div');
-    loading.className = 'bgm-subject-card-state bgm-subject-card-state--loading';
+    loading.className = 'bgm-subject-card bgm-subject-card--skeleton';
     loading.setAttribute('role', 'status');
 
     const loadingText = document.createElement('span');
@@ -1232,18 +1299,52 @@ function createCardLoadingState() {
     loading.setAttribute('aria-label', loadingText.textContent);
     loading.appendChild(loadingText);
 
-    const loadingMedia = document.createElement('span');
-    loadingMedia.className = 'bgm-subject-card-state__media';
-    loading.appendChild(loadingMedia);
+    const poster = document.createElement('div');
+    poster.className = 'bgm-subject-card__poster is-cover-loading';
+    if (isMusic) {
+        const obi = document.createElement('div');
+        obi.className = 'bgm-subject-card__obi';
+        loading.appendChild(obi);
 
-    const loadingContent = document.createElement('span');
-    loadingContent.className = 'bgm-subject-card-state__content';
-    ['short', 'title', 'subtitle', 'summary', 'meta'].forEach(size => {
-        const line = document.createElement('span');
-        line.className = `bgm-subject-card-state__line bgm-subject-card-state__line--${size}`;
-        loadingContent.appendChild(line);
+        const caseEl = document.createElement('div');
+        caseEl.className = 'bgm-subject-card__case';
+        caseEl.appendChild(poster);
+        loading.appendChild(caseEl);
+    } else {
+        loading.appendChild(poster);
+    }
+
+    const content = document.createElement('div');
+    content.className = 'bgm-subject-card__content';
+
+    const header = document.createElement('div');
+    header.className = 'bgm-subject-card__header';
+    const eyebrow = document.createElement('div');
+    eyebrow.className = 'bgm-subject-card__eyebrow';
+    eyebrow.appendChild(createCardPlaceholder('span', isMusic ? 'bgm-subject-card__kind' : 'bgm-subject-card__type'));
+    eyebrow.appendChild(createCardPlaceholder('span', 'bgm-subject-card__date'));
+    header.appendChild(eyebrow);
+    const rating = document.createElement('div');
+    rating.className = 'bgm-subject-card__rating';
+    rating.appendChild(createCardPlaceholder('span', 'bgm-subject-card__score'));
+    header.appendChild(rating);
+    content.appendChild(header);
+
+    content.appendChild(createCardPlaceholder('span', 'bgm-subject-card__title'));
+    content.appendChild(createCardPlaceholder('span', isMusic ? 'bgm-subject-card__credit' : 'bgm-subject-card__subtitle'));
+    content.appendChild(createCardPlaceholder('span', 'bgm-subject-card__summary'));
+
+    const footer = document.createElement('div');
+    footer.className = 'bgm-subject-card__footer';
+    footer.appendChild(createCardPlaceholder('span', isMusic ? 'bgm-subject-card__specs' : 'bgm-subject-card__meta'));
+    const tags = document.createElement('div');
+    tags.className = 'bgm-subject-card__tags';
+    ['short', 'long', 'short'].forEach(variant => {
+        tags.appendChild(createCardPlaceholder('span', 'bgm-subject-card__tag', variant));
     });
-    loading.appendChild(loadingContent);
+    footer.appendChild(tags);
+    content.appendChild(footer);
+    loading.appendChild(content);
 
     return loading;
 }
@@ -1257,12 +1358,17 @@ function createCardLoadingState() {
 async function renderCard(subjectId, cardElement) {
     if (!cardElement || cardElement.dataset.bgmLoaded === '1' || cardElement.dataset.bgmLoading === '1') return;
 
+    const safeSubjectId = parseInt(subjectId, 10);
+    const rememberedType = Number.isInteger(safeSubjectId) && safeSubjectId > 0
+        ? getRememberedSubjectType(safeSubjectId)
+        : '';
     cardElement.dataset.bgmLoading = '1';
     cardElement.setAttribute('aria-busy', 'true');
+    if (rememberedType) cardElement.dataset.subjectType = rememberedType;
+    else delete cardElement.dataset.subjectType;
     cardElement.textContent = '';
-    cardElement.appendChild(createCardLoadingState());
+    cardElement.appendChild(createCardLoadingState(rememberedType));
 
-    const safeSubjectId = parseInt(subjectId, 10);
     if (!Number.isInteger(safeSubjectId) || safeSubjectId <= 0) {
         renderCardError(cardElement, subjectId);
         delete cardElement.dataset.bgmLoading;
@@ -1278,6 +1384,7 @@ async function renderCard(subjectId, cardElement) {
             cardElement.textContent = '';
             const subjectCard = buildCardElement(data, safeSubjectId);
             cardElement.dataset.subjectType = subjectCard.dataset.subjectType;
+            rememberSubjectType(safeSubjectId, subjectCard.dataset.subjectType);
             cardElement.appendChild(subjectCard);
             cardElement.dataset.bgmLoaded = '1';
             cardElement.setAttribute('aria-busy', 'false');
@@ -1642,7 +1749,7 @@ function buildCardElement(data, subjectId) {
 
         const obiId = document.createElement('span');
         obiId.className = 'bgm-subject-card__obi-id';
-        obiId.textContent = `Bangumi Subject ${subjectId}`;
+        obiId.textContent = `BGM-${subjectId}`;
         obi.appendChild(obiId);
 
         const releaseYear = cardData.date.match(/^\d{4}/);
