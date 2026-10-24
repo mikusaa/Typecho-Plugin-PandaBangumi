@@ -144,7 +144,23 @@
     line-height: 1.2;
 }
 
-.bgm-poster-card__progress-text {
+.bgm-poster-card__badge {
+    position: absolute;
+    z-index: 3;
+    top: 8px;
+    left: 8px;
+    padding: 0.12rem 0.5rem;
+    border-radius: 999px;
+    background: var(--pb-subject-accent);
+    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.25);
+    color: #fff;
+    font-size: 0.68rem;
+    font-weight: 700;
+    line-height: 1.4;
+}
+
+.bgm-poster-card__progress-text,
+.bgm-poster-card__meta {
     display: block;
     margin-top: 0.3rem;
     font-size: 0.75rem;

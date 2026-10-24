@@ -933,7 +933,7 @@ function shouldShowPosterProgress(type, cate, hasProgress) {
 /**
  * 创建通用封面卡片
  * @param {object} item
- * @param {{type: string, cate?: string, imageUrl?: string, fallbackImageUrl?: string}} options
+ * @param {{type: string, cate?: string, imageUrl?: string, fallbackImageUrl?: string, showProgress?: boolean}} options
  * @returns {HTMLElement}
  */
 function createPosterCard(item, options) {
@@ -981,8 +981,17 @@ function createPosterCard(item, options) {
     title.className = 'bgm-poster-card__title';
     title.textContent = displayName;
 
+    const isCalendar = type === 'calendar';
+    const airBadge = isCalendar ? getAirDateBadge(item.air_date) : '';
+    if (airBadge) {
+        const badge = document.createElement('span');
+        badge.className = 'bgm-poster-card__badge';
+        badge.textContent = airBadge;
+        link.appendChild(badge);
+    }
+
     const score = Number(item.score || 0);
-    if (isCompletedCollectionType(type, cate) && Number.isFinite(score) && score > 0) {
+    if ((isCalendar || isCompletedCollectionType(type, cate)) && Number.isFinite(score) && score > 0) {
         const scoreEl = document.createElement('span');
         scoreEl.className = 'bgm-poster-card__score';
         scoreEl.textContent = `★ ${score.toFixed(1)}`;
@@ -995,7 +1004,15 @@ function createPosterCard(item, options) {
     const current = isBook ? Math.max(0, Number(item.vol_status || 0)) : epStatus;
     const totalCount = isBook ? Math.max(0, Number(item.vol_count || 0)) : count;
     const hasProgress = !isBook || current > 0 || totalCount > 0;
-    if (shouldShowPosterProgress(type, cate, hasProgress)) {
+    const showCalendarProgress = isCalendar && Boolean(options && options.showProgress);
+    const doing = Math.max(0, Number(item.doing || 0));
+    if (isCalendar && !showCalendarProgress && doing > 0) {
+        const meta = document.createElement('span');
+        meta.className = 'bgm-poster-card__meta';
+        meta.textContent = formatWatcherText(doing);
+        overlay.appendChild(meta);
+    }
+    if (shouldShowPosterProgress(type, cate, hasProgress) || showCalendarProgress) {
         const total = totalCount > 0 ? String(totalCount) : '未知';
         const unit = isBook ? ' 册' : isMusic ? ' 曲' : '';
         const progressText = document.createElement('span');
@@ -1015,6 +1032,35 @@ function createPosterCard(item, options) {
 
     link.appendChild(overlay);
     return link;
+}
+
+/**
+ * 首播前后 7 天内返回开播标记，其余返回空字符串。
+ * @param {string} value
+ * @returns {string}
+ */
+function getAirDateBadge(value) {
+    const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(value || ''));
+    if (!match) return '';
+    const airTime = new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3])).getTime();
+    if (!Number.isFinite(airTime)) return '';
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const days = Math.round((airTime - today.getTime()) / (24 * 60 * 60 * 1000));
+    if (days > 0 && days <= 7) return '即将开播';
+    if (days <= 0 && days > -7) return '新开播';
+    return '';
+}
+
+/**
+ * 格式化在看人数，万以上缩写。
+ * @param {number} value
+ * @returns {string}
+ */
+function formatWatcherText(value) {
+    return value >= 10000
+        ? `${(value / 10000).toFixed(1).replace(/\.0$/, '')} 万人在看`
+        : `${String(value)} 人在看`;
 }
 
 /**
@@ -1228,11 +1274,18 @@ async function loadCalendar(calContainer) {
                         name_cn: title,
                         url: href,
                         img: item.img,
-                        img_fallback: item.img_fallback
+                        img_fallback: item.img_fallback,
+                        score: item.score,
+                        doing: item.doing,
+                        air_date: item.air_date,
+                        status: item.status,
+                        count: item.count
                     }, {
                         type: 'calendar',
                         imageUrl,
-                        fallbackImageUrl: item.img_fallback
+                        fallbackImageUrl: item.img_fallback,
+                        // 只看在看时后端附带收视进度
+                        showProgress: calFilter === 'watching' && item.status !== undefined
                     });
                     panel.appendChild(bangumiItem);
                 });

@@ -305,6 +305,19 @@ final class CollectionService
         int $requiredLimit,
         int $validTimeSpan
     ): array {
+        return array_keys($this->subjectProgress($userId, $type, $category, $requiredLimit, $validTimeSpan));
+    }
+
+    /**
+     * @return array<int, array{status: int, count: int}> 以条目 ID 为键的收视进度
+     */
+    public function subjectProgress(
+        string $userId,
+        string $type,
+        string $category,
+        int $requiredLimit,
+        int $validTimeSpan
+    ): array {
         if (!array_key_exists($category, $this->subjectTypes)) {
             return array();
         }
@@ -318,7 +331,16 @@ final class CollectionService
             $requiredLimit,
             $validTimeSpan
         );
-        $ids = array_map('intval', array_column($cache['data'], 'id'));
-        return array_values(array_unique(array_filter($ids, static fn(int $id): bool => $id > 0)));
+        $progress = array();
+        foreach ($cache['data'] as $item) {
+            $subjectId = (int)($item['id'] ?? 0);
+            if ($subjectId > 0 && !isset($progress[$subjectId])) {
+                $progress[$subjectId] = array(
+                    'status' => max(0, (int)($item['status'] ?? 0)),
+                    'count' => max(0, (int)($item['count'] ?? 0))
+                );
+            }
+        }
+        return $progress;
     }
 }
