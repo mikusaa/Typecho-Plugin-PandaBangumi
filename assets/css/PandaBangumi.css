@@ -168,6 +168,20 @@
     opacity: 0.86;
 }
 
+.bgm-poster-card__stats {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    margin-top: 0.3rem;
+    column-gap: 0.5rem;
+}
+
+.bgm-poster-card__stats .bgm-poster-card__progress-text,
+.bgm-poster-card__stats .bgm-poster-card__meta {
+    margin-top: 0;
+    white-space: nowrap;
+}
+
 .bgm-poster-card__progress-track {
     position: absolute;
     z-index: 3;
@@ -379,45 +393,6 @@
     margin-bottom: 1rem;
 }
 
-/* 标题区放在页面底色上，文字跟随主题颜色 */
-.cal-heading {
-    display: flex;
-    min-width: 0;
-    flex: 0 0 auto;
-    align-items: baseline;
-    gap: 0.55rem;
-}
-
-.cal-heading__day {
-    font-size: 1.05rem;
-    font-weight: 750;
-    line-height: 1.3;
-}
-
-.cal-heading__count {
-    font-size: 0.78rem;
-    font-variant-numeric: tabular-nums;
-    line-height: 1.3;
-    opacity: 0.6;
-}
-
-.cal-heading__count:empty,
-.cal-heading__today[hidden] {
-    display: none;
-}
-
-.cal-heading__today {
-    align-self: center;
-    padding: 0.14rem 0.55rem;
-    border-radius: 999px;
-    background: rgba(127, 127, 127, 0.12);
-    background: color-mix(in srgb, var(--pb-subject-accent) 13%, transparent);
-    color: var(--pb-subject-accent);
-    font-size: 0.68rem;
-    font-weight: 700;
-    line-height: 1.2;
-}
-
 .cal-week-picker {
     min-width: 0;
 }
@@ -472,11 +447,16 @@
     font-weight: 600;
 }
 
-/* 今天用强调色圆点标记，不再改变文字颜色 */
-.cal-tab-button.is-today::after {
+.cal-tab-button__day {
+    position: relative;
+    display: inline-block;
+}
+
+/* 今天用强调色圆点标记，不再改变文字颜色；圆点对齐星期文字而非整颗按钮 */
+.cal-tab-button.is-today .cal-tab-button__day::after {
     content: '';
     position: absolute;
-    bottom: 3px;
+    bottom: calc(3px - 0.4rem);
     left: 50%;
     width: 4px;
     height: 4px;
@@ -488,6 +468,22 @@
 .cal-tab-button:focus-visible {
     outline: 2px solid var(--pb-subject-accent);
     outline-offset: 1px;
+}
+
+.cal-tab-button__count {
+    margin-left: 0.3em;
+    font-size: 0.72em;
+    font-variant-numeric: tabular-nums;
+    opacity: 0.6;
+}
+
+.cal-tab-button__count:empty {
+    display: none;
+}
+
+/* 没有番剧的日子仍可点击，只是淡化 */
+.cal-tab-button.is-empty:not(.active) {
+    opacity: 0.45;
 }
 
 @media (hover: hover) and (pointer: fine) {
@@ -538,11 +534,6 @@
         gap: 0.7rem;
     }
 
-    /* 窄屏由星期按钮显示当前日，标题区隐藏避免重复 */
-    .cal-heading {
-        display: none;
-    }
-
     .cal-week-picker {
         display: block;
         width: 100%;
@@ -577,6 +568,17 @@
         background: var(--pb-subject-accent);
         vertical-align: middle;
         transform: translateY(-1px);
+    }
+
+    .cal-week-trigger__count {
+        font-size: 0.8rem;
+        font-variant-numeric: tabular-nums;
+        font-weight: 500;
+        opacity: 0.6;
+    }
+
+    .cal-week-trigger__count:empty {
+        display: none;
     }
 
     .cal-week-trigger:focus-visible {
@@ -628,10 +630,28 @@
         transition-delay: 0s;
     }
 
+    /* 七列较窄，部数放到星期下方 */
     .cal-tab-button {
+        display: flex;
         min-width: 0;
+        flex-direction: column;
+        align-items: center;
         padding: 0.48rem 0.05rem;
         font-size: 0.78rem;
+    }
+
+    .cal-tab-button__count {
+        margin-left: 0;
+        line-height: 1.2;
+    }
+
+    /* 部数占了星期下方，今天的圆点改为贴按钮底边 */
+    .cal-tab-button__day {
+        position: static;
+    }
+
+    .cal-tab-button.is-today .cal-tab-button__day::after {
+        bottom: 3px;
     }
 }
 

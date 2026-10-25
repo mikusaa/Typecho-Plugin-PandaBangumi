@@ -128,15 +128,39 @@ assert.deepEqual(calendarLoadingState.children[1].children[0].children[0].childr
 
 const calendarControls = createCalendarControls(2);
 assert.equal(calendarControls.header.className, 'bgm-calendar-header');
-assert.deepEqual(calendarControls.header.children.map(child => child.className), ['cal-heading', 'cal-week-picker']);
-assert.equal(calendarControls.header.children[0].children[0].textContent, '星期二');
-assert.equal(calendarControls.header.children[0].children[2].hidden, false);
+assert.deepEqual(calendarControls.header.children.map(child => child.className), ['cal-week-picker']);
+const calendarTrigger = calendarControls.header.children[0].children[0];
+assert.deepEqual(calendarTrigger.children.map(child => child.className), [
+    'cal-week-trigger__label',
+    'cal-week-trigger__count',
+    'cal-week-trigger__chevron'
+]);
+assert.equal(calendarTrigger.children[0].textContent, '周二');
+assert.equal(calendarTrigger.children[1].textContent, '');
 assert.equal(calendarControls.tabs.className, 'cal-tabs');
 assert.equal(calendarControls.tabs.children.length, 7);
-assert.equal(calendarControls.tabs.children[0].textContent, '周一');
-assert.equal(calendarControls.tabs.children[1].textContent, '周二');
+assert.equal(calendarControls.tabs.children[0].children[0].textContent, '周一');
+assert.equal(calendarControls.tabs.children[1].children[0].textContent, '周二');
+assert.equal(calendarControls.tabs.children[1].children[1].textContent, '');
 assert.equal(calendarControls.tabs.children[1].classList.contains('active'), true);
 assert.equal(calendarControls.tabs.children[1].attributes['aria-current'], 'date');
+
+const fakeCalendarPanels = counts => ({
+    querySelectorAll: () => counts.map((count, index) => ({
+        dataset: { dayId: String(index + 1) },
+        classList: { toggle() {} },
+        querySelectorAll: () => ({ length: count })
+    }))
+});
+calendarControls.setPanels(fakeCalendarPanels([3, 1, 0, 0, 12, 0, 2]));
+assert.equal(calendarControls.tabs.children[0].children[1].textContent, '3');
+assert.equal(calendarControls.tabs.children[2].children[1].textContent, '');
+assert.equal(calendarControls.tabs.children[2].classList.contains('is-empty'), true);
+assert.equal(calendarControls.tabs.children[4].classList.contains('is-empty'), false);
+assert.equal(calendarControls.tabs.children[4].attributes['aria-label'], '星期五，12 部');
+assert.equal(calendarControls.tabs.children[5].attributes['aria-label'], '星期六，暂无');
+assert.equal(calendarTrigger.children[1].textContent, '1 部');
+assert.equal(calendarTrigger.attributes['aria-label'], '选择星期，当前星期二，1 部');
 
 const loadingState = createCardLoadingState();
 assert.equal(loadingState.className, 'bgm-subject-card bgm-subject-card--skeleton');
@@ -262,9 +286,18 @@ const watchingPoster = createPosterCard({
 }, { type: 'calendar', showProgress: true });
 assert.equal(findByClass(watchingPoster, 'bgm-poster-card__badge'), null);
 assert.equal(findByClass(watchingPoster, 'bgm-poster-card__score'), null);
-assert.equal(findByClass(watchingPoster, 'bgm-poster-card__meta'), null);
-assert.equal(findByClass(watchingPoster, 'bgm-poster-card__progress-text').textContent, '4 / 12');
+assert.deepEqual(findByClass(watchingPoster, 'bgm-poster-card__stats').children.map(child => child.textContent), [
+    '4 / 12',
+    '50 人在看'
+]);
 assert.equal(findByClass(watchingPoster, 'bgm-poster-card__progress-bar').style.width, '33.33333333333333%');
+
+const unwatchedPoster = createPosterCard({
+    id: 303, name: 'Quiet', url: 'https://bgm.tv/subject/303', doing: 0, status: 1, count: 12
+}, { type: 'calendar', showProgress: true });
+assert.equal(findByClass(unwatchedPoster, 'bgm-poster-card__stats'), null);
+assert.equal(findByClass(unwatchedPoster, 'bgm-poster-card__meta'), null);
+assert.equal(findByClass(unwatchedPoster, 'bgm-poster-card__progress-text').textContent, '1 / 12');
 
 const game = normalized('game');
 assert.equal(game.typeKey, 'game');

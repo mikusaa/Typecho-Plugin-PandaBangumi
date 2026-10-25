@@ -655,23 +655,6 @@ function createCalendarControls(todayId) {
     const calendarHeader = document.createElement('div');
     calendarHeader.className = 'bgm-calendar-header';
 
-    const heading = document.createElement('div');
-    heading.className = 'cal-heading';
-    heading.setAttribute('aria-hidden', 'true');
-
-    const headingDay = document.createElement('span');
-    headingDay.className = 'cal-heading__day';
-    heading.appendChild(headingDay);
-
-    const headingCount = document.createElement('span');
-    headingCount.className = 'cal-heading__count';
-    heading.appendChild(headingCount);
-
-    const headingToday = document.createElement('span');
-    headingToday.className = 'cal-heading__today';
-    headingToday.textContent = '今天';
-    heading.appendChild(headingToday);
-
     const weekPicker = document.createElement('div');
     weekPicker.className = 'cal-week-picker';
 
@@ -684,6 +667,10 @@ function createCalendarControls(todayId) {
     weekTriggerLabel.className = 'cal-week-trigger__label';
     weekTrigger.appendChild(weekTriggerLabel);
 
+    const weekTriggerCount = document.createElement('span');
+    weekTriggerCount.className = 'cal-week-trigger__count';
+    weekTrigger.appendChild(weekTriggerCount);
+
     const weekTriggerChevron = document.createElement('span');
     weekTriggerChevron.className = 'cal-week-trigger__chevron';
     weekTriggerChevron.setAttribute('aria-hidden', 'true');
@@ -692,6 +679,8 @@ function createCalendarControls(todayId) {
     const tabs = document.createElement('div');
     tabs.className = 'cal-tabs';
     const tabButtons = [];
+    // 数据返回前为空，返回后按星期记录番剧数量
+    const dayCounts = new Map();
     let activeTab = null;
     let panels = null;
 
@@ -699,10 +688,20 @@ function createCalendarControls(todayId) {
         const tabButton = document.createElement('button');
         tabButton.className = 'cal-tab-button';
         tabButton.type = 'button';
-        tabButton.textContent = day.shortName;
         tabButton.title = day.fullName;
         tabButton.setAttribute('aria-label', day.fullName);
         tabButton.dataset.dayId = String(day.id);
+
+        const tabDay = document.createElement('span');
+        tabDay.className = 'cal-tab-button__day';
+        tabDay.textContent = day.shortName;
+        tabButton.appendChild(tabDay);
+
+        const tabCount = document.createElement('span');
+        tabCount.className = 'cal-tab-button__count';
+        tabCount.setAttribute('aria-hidden', 'true');
+        tabButton.appendChild(tabCount);
+
         if (day.id === currentDayId) {
             tabButton.classList.add('active', 'is-today');
             tabButton.setAttribute('aria-current', 'date');
@@ -715,23 +714,27 @@ function createCalendarControls(todayId) {
         tabs.appendChild(tabButton);
     });
 
+    const formatDayCount = count => (count > 0 ? `${String(count)} 部` : '暂无');
+    const updateTabCounts = () => {
+        tabButtons.forEach((tabButton, index) => {
+            const day = weekdays[index];
+            const hasCount = dayCounts.has(day.id);
+            const count = dayCounts.get(day.id) || 0;
+            tabButton.children[1].textContent = count > 0 ? String(count) : '';
+            tabButton.classList.toggle('is-empty', hasCount && count === 0);
+            tabButton.setAttribute('aria-label', hasCount
+                ? `${day.fullName}，${formatDayCount(count)}`
+                : day.fullName);
+        });
+    };
     const updateWeekTrigger = tabButton => {
         if (!tabButton) return;
-        weekTriggerLabel.textContent = tabButton.textContent;
-        weekTrigger.setAttribute('aria-label', `选择星期，当前${tabButton.textContent}`);
+        const day = weekdays[tabButtons.indexOf(tabButton)];
+        const countText = dayCounts.has(day.id) ? formatDayCount(dayCounts.get(day.id)) : '';
+        weekTriggerLabel.textContent = day.shortName;
+        weekTriggerCount.textContent = countText;
+        weekTrigger.setAttribute('aria-label', `选择星期，当前${day.fullName}${countText ? `，${countText}` : ''}`);
         weekTrigger.classList.toggle('is-today', tabButton.classList.contains('is-today'));
-    };
-    const updateHeading = () => {
-        if (!activeTab) return;
-        headingDay.textContent = activeTab.title;
-        headingToday.hidden = !activeTab.classList.contains('is-today');
-        const activePanel = getActivePanel();
-        if (!activePanel) {
-            headingCount.textContent = '';
-            return;
-        }
-        const count = activePanel.querySelectorAll('.bgm-poster-card').length;
-        headingCount.textContent = count > 0 ? `${String(count)} 部` : '暂无';
     };
     const getActivePanel = () => {
         if (!panels || !activeTab) return null;
@@ -755,19 +758,18 @@ function createCalendarControls(todayId) {
         activeTab = tabButton;
         updateWeekTrigger(activeTab);
         syncActivePanel();
-        updateHeading();
         const activePanel = getActivePanel();
         if (activePanel) loadCalendarPanelImages(activePanel);
     };
 
     updateWeekTrigger(activeTab);
-    updateHeading();
     weekTrigger.addEventListener('click', () => {
         setWeekPickerExpanded(weekPicker, !weekPicker.classList.contains('is-expanded'));
     });
     tabs.addEventListener('click', event => {
-        if (!event.target.matches('.cal-tab-button')) return;
-        activateTab(event.target);
+        const tabButton = event.target.closest('.cal-tab-button');
+        if (!tabButton) return;
+        activateTab(tabButton);
         setWeekPickerExpanded(weekPicker, false);
         if (window.matchMedia('(max-width: 480px)').matches) {
             weekTrigger.focus({ preventScroll: true });
@@ -776,7 +778,6 @@ function createCalendarControls(todayId) {
 
     weekPicker.appendChild(weekTrigger);
     weekPicker.appendChild(tabs);
-    calendarHeader.appendChild(heading);
     calendarHeader.appendChild(weekPicker);
 
     return {
@@ -786,8 +787,13 @@ function createCalendarControls(todayId) {
         getActivePanel,
         setPanels(nextPanels) {
             panels = nextPanels;
+            dayCounts.clear();
+            panels.querySelectorAll('.cal-panel').forEach(panel => {
+                dayCounts.set(Number(panel.dataset.dayId), panel.querySelectorAll('.bgm-poster-card').length);
+            });
             syncActivePanel();
-            updateHeading();
+            updateTabCounts();
+            updateWeekTrigger(activeTab);
         }
     };
 }
@@ -1006,11 +1012,11 @@ function createPosterCard(item, options) {
     const hasProgress = !isBook || current > 0 || totalCount > 0;
     const showCalendarProgress = isCalendar && Boolean(options && options.showProgress);
     const doing = Math.max(0, Number(item.doing || 0));
-    if (isCalendar && !showCalendarProgress && doing > 0) {
-        const meta = document.createElement('span');
-        meta.className = 'bgm-poster-card__meta';
-        meta.textContent = formatWatcherText(doing);
-        overlay.appendChild(meta);
+    let watchers = null;
+    if (isCalendar && doing > 0) {
+        watchers = document.createElement('span');
+        watchers.className = 'bgm-poster-card__meta';
+        watchers.textContent = formatWatcherText(doing);
     }
     if (shouldShowPosterProgress(type, cate, hasProgress) || showCalendarProgress) {
         const total = totalCount > 0 ? String(totalCount) : '未知';
@@ -1018,7 +1024,16 @@ function createPosterCard(item, options) {
         const progressText = document.createElement('span');
         progressText.className = 'bgm-poster-card__progress-text';
         progressText.textContent = `${String(current)} / ${total}${unit}`;
-        overlay.appendChild(progressText);
+        if (watchers) {
+            // 进度与在看人数并排一行，卡片过窄时人数换到下一行
+            const stats = document.createElement('span');
+            stats.className = 'bgm-poster-card__stats';
+            stats.appendChild(progressText);
+            stats.appendChild(watchers);
+            overlay.appendChild(stats);
+        } else {
+            overlay.appendChild(progressText);
+        }
 
         const progressTrack = document.createElement('span');
         progressTrack.className = 'bgm-poster-card__progress-track';
@@ -1028,6 +1043,8 @@ function createPosterCard(item, options) {
         progressBar.style.width = totalCount > 0 ? `${Math.min(100, current / totalCount * 100)}%` : '0';
         progressTrack.appendChild(progressBar);
         link.appendChild(progressTrack);
+    } else if (watchers) {
+        overlay.appendChild(watchers);
     }
 
     link.appendChild(overlay);
