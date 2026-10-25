@@ -1,48 +1,198 @@
+#wmd-button-bar:has(#wmd-pandabangumi-card-button),
+#wmd-button-row:has(#wmd-pandabangumi-card-button) {
+    height: auto;
+    min-height: 26px;
+}
+#wmd-button-bar:has(#wmd-pandabangumi-card-button) { align-items: flex-start; }
+#wmd-button-row:has(#wmd-pandabangumi-card-button) { min-width: 0; }
+#wmd-pandabangumi-card-button > button {
+    display: block;
+    width: 24px;
+    height: 24px;
+    padding: 2px;
+    border: 0;
+    border-radius: 2px;
+    background: transparent;
+    cursor: pointer;
+}
 #wmd-pandabangumi-card-button .pb-editor-icon {
     display: block;
     width: 20px;
     height: 20px;
     object-fit: contain;
 }
-
-#wmd-pandabangumi-card-button:focus-visible {
+#wmd-pandabangumi-card-button > button[aria-expanded="true"] {
+    background: rgba(70, 123, 150, .15);
+    box-shadow: inset 0 0 0 1px #467b96;
+}
+#wmd-pandabangumi-card-button > button:focus-visible,
+.pb-editor-panel button:focus-visible {
     outline: 2px solid #467b96;
     outline-offset: 1px;
 }
 
-.pb-editor-panel .wmd-prompt-background {
+/* Typecho 后台的扁平风格：#467b96 主色、2px 圆角、#d9d9d6 边框 */
+.pb-editor-panel {
+    --pb-surface: #fff;
+    --pb-sunken: #f6f6f3;
+    --pb-text: #444;
+    --pb-muted: #999;
+    --pb-border: #d9d9d6;
+    --pb-button: #e9e9e6;
+    --pb-button-hover: #dbdbd6;
+    --pb-accent: #467b96;
+    --pb-accent-hover: #3c6a81;
+    --pb-primary: #467b96;
+    --pb-primary-hover: #3c6a81;
+    --pb-selected: #eef4f7;
+    --pb-danger: #b94a48;
     position: fixed;
-    inset: 0;
-    z-index: 1000;
-    opacity: .5;
-}
-
-.pb-editor-panel .pb-editor-dialog {
-    margin: 0;
+    z-index: 1100;
     box-sizing: border-box;
-    transform: translate(-50%, -50%);
+    border: 1px solid var(--pb-border);
+    border-radius: 2px;
+    color: var(--pb-text);
+    background: var(--pb-surface);
+    box-shadow: 0 6px 20px rgba(0, 0, 0, .12);
+    font-family: inherit;
+    font-size: 13px;
+    line-height: 1.5;
+    overflow: auto;
+    overscroll-behavior: contain;
+    color-scheme: light;
+}
+.pb-editor-panel[hidden] { display: none; }
+.pb-editor-panel *, .pb-editor-panel *::before, .pb-editor-panel *::after { box-sizing: border-box; }
+.pb-editor-panel button { font: inherit; color: inherit; cursor: pointer; }
+
+.pb-editor-panel .pb-editor-tabs {
+    display: flex;
+    padding: 0 8px;
+    border-bottom: 1px solid var(--pb-border);
+    background: var(--pb-sunken);
+}
+.pb-editor-panel .pb-editor-tabs button {
+    flex: 1;
+    height: 38px;
+    margin-bottom: -1px;
+    padding: 0 6px;
+    border: 1px solid transparent;
+    border-bottom: 0;
+    background: none;
+    color: var(--pb-muted);
+}
+.pb-editor-panel .pb-editor-tabs button:hover { color: var(--pb-text); }
+.pb-editor-panel .pb-editor-tabs [aria-selected="true"] {
+    border-color: var(--pb-border);
+    border-radius: 2px 2px 0 0;
+    background: var(--pb-surface);
+    color: var(--pb-text);
+    font-weight: 600;
 }
 
-.pb-editor-panel .pb-editor-heading {
-    margin-bottom: .5em;
-    font-weight: bold;
+.pb-editor-panel .pb-editor-body { min-height: 148px; padding: 14px 14px 4px; }
+.pb-editor-panel fieldset { min-width: 0; margin: 0 0 12px; padding: 0; border: 0; }
+.pb-editor-panel .pb-editor-label { display: block; margin: 0 0 6px; padding: 0; font-weight: 600; }
+.pb-editor-panel input[type="text"] {
+    display: block;
+    width: 100%;
+    min-width: 0;
+    height: 34px;
+    padding: 0 8px;
+    border: 1px solid var(--pb-border);
+    border-radius: 2px;
+    background: var(--pb-surface);
+    color: var(--pb-text);
+    font: inherit;
+    font-size: 16px;
 }
-
-.pb-editor-panel .pb-editor-description {
-    color: #777;
+.pb-editor-panel input[type="text"]:focus {
+    outline: none;
+    border-color: var(--pb-accent);
+    box-shadow: 0 0 0 2px rgba(70, 123, 150, .2);
 }
+.pb-editor-panel input[aria-invalid="true"] { border-color: var(--pb-danger); }
+.pb-editor-panel .pb-editor-description { margin: 6px 0 0; color: var(--pb-muted); font-size: 12px; overflow-wrap: anywhere; }
+.pb-editor-panel .pb-editor-error { margin: 6px 0 0; color: var(--pb-danger); font-size: 12px; }
+.pb-editor-panel .pb-editor-error:empty { display: none; }
 
-.pb-editor-panel .pb-editor-error {
-    min-height: 1.5em;
-    color: #b94a48;
+/* 单选做成紧凑选项块，原生 radio 保留方向键语义 */
+.pb-editor-panel .pb-editor-choices { display: flex; flex-wrap: wrap; gap: 6px; }
+.pb-editor-panel .pb-editor-choice { position: relative; margin: 0; cursor: pointer; }
+.pb-editor-panel .pb-editor-choice input { position: absolute; inset: 0; margin: 0; opacity: 0; cursor: pointer; }
+.pb-editor-panel .pb-editor-choice span {
+    display: block;
+    min-width: 52px;
+    padding: 4px 10px;
+    border: 1px solid var(--pb-border);
+    border-radius: 2px;
+    background: var(--pb-surface);
+    text-align: center;
 }
-
-.pb-editor-panel .pb-editor-actions {
-    margin-top: .5em;
+.pb-editor-panel .pb-editor-choice:hover span { border-color: var(--pb-muted); }
+.pb-editor-panel .pb-editor-choice input:checked + span {
+    border-color: var(--pb-accent);
+    background: var(--pb-selected);
+    color: var(--pb-accent-hover);
 }
+.pb-editor-panel .pb-editor-choice input:focus-visible + span { outline: 2px solid var(--pb-accent); outline-offset: 1px; }
 
-@media (max-width: 575px) {
-    .pb-editor-panel .pb-editor-dialog {
-        width: calc(100% - 32px);
-    }
+/* 生成代码预览，可直接复制到主题模板或其他编辑器 */
+.pb-editor-panel .pb-editor-code {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin: 8px 14px 0;
+    padding: 6px 6px 6px 8px;
+    border-radius: 2px;
+    background: var(--pb-sunken);
+}
+.pb-editor-panel .pb-editor-code code {
+    flex: 1;
+    min-width: 0;
+    color: var(--pb-muted);
+    font: 11.5px/1.45 Menlo, Consolas, monospace;
+    overflow-wrap: anywhere;
+}
+.pb-editor-panel .pb-editor-code code.pb-editor-code-ready { color: var(--pb-text); }
+.pb-editor-panel .pb-editor-code button {
+    flex-shrink: 0;
+    height: 24px;
+    padding: 0 8px;
+    border: 0;
+    border-radius: 2px;
+    background: transparent;
+    color: var(--pb-accent-hover);
+    font-size: 12px;
+}
+.pb-editor-panel .pb-editor-code button:hover:not(:disabled) { background: var(--pb-button); }
+.pb-editor-panel .pb-editor-code button:disabled { color: var(--pb-muted); cursor: default; }
+
+.pb-editor-panel .pb-editor-actions { display: flex; justify-content: flex-end; gap: 8px; padding: 12px 14px 14px; }
+.pb-editor-panel .pb-editor-actions button {
+    height: 30px;
+    padding: 0 14px;
+    border: 0;
+    border-radius: 2px;
+    background: var(--pb-button);
+}
+.pb-editor-panel .pb-editor-actions button:hover { background: var(--pb-button-hover); }
+.pb-editor-panel .pb-editor-actions .primary { background: var(--pb-primary); color: #fff; }
+.pb-editor-panel .pb-editor-actions .primary:hover { background: var(--pb-primary-hover); }
+
+/* 深色只认 JS 按编辑器背景（或系统配色）写入的 data-pb-theme */
+.pb-editor-panel[data-pb-theme="dark"] {
+    --pb-surface: #26292d;
+    --pb-sunken: #1f2124;
+    --pb-text: #e2e4e7;
+    --pb-muted: #959ca5;
+    --pb-border: #3d434a;
+    --pb-button: #33373c;
+    --pb-button-hover: #3d4248;
+    --pb-accent: #6a9cb8;
+    --pb-accent-hover: #8bb5cc;
+    --pb-selected: #263843;
+    --pb-danger: #e07b79;
+    box-shadow: 0 6px 20px rgba(0, 0, 0, .45);
+    color-scheme: dark;
 }

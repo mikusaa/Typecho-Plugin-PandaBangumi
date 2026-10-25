@@ -7,7 +7,6 @@ use Typecho\Plugin\Exception as PluginException;
 use Typecho\Widget\Helper\Form;
 use Typecho\Widget\Helper\Form\Element\Radio;
 use Typecho\Widget\Helper\Form\Element\Text;
-use Typecho\Widget\Helper\Layout;
 use Widget\Options;
 use Utils\Helper;
 
@@ -68,6 +67,7 @@ class Plugin implements PluginInterface
         \Typecho\Plugin::factory('Widget_Archive')->footer = __CLASS__ . '::footer';
         \Typecho\Plugin::factory('admin/write-post.php')->bottom = __CLASS__ . '::editor';
         \Typecho\Plugin::factory('admin/write-page.php')->bottom = __CLASS__ . '::editor';
+        \Typecho\Plugin::factory('admin/editor-js.php')->markdownEditor = __CLASS__ . '::editorBridge';
         Helper::addRoute("route_PandaBangumi", "/PandaBangumi", "PandaBangumi_Action", 'action');
     }
 
@@ -92,46 +92,10 @@ class Plugin implements PluginInterface
      */
     public static function config(Form $form): void
     {
-        $adminCss = htmlspecialchars(self::pluginAssetUrl('assets/css/PandaBangumiAdmin.css'), ENT_QUOTES, 'UTF-8');
         $adminJs = htmlspecialchars(self::pluginAssetUrl('assets/js/PandaBangumiAdmin.js'), ENT_QUOTES, 'UTF-8');
 
-        echo '<link rel="stylesheet" href="' . $adminCss . '">';
         echo '<script defer src="' . $adminJs . '"></script>';
         echo '作者：<a href="https://github.com/mikusaa">mikusa</a>，插件介绍页：<a href="https://www.himiku.com/archives/pandabangumi.html">PandaBangumi 插件介绍与使用说明</a><br>';
-
-        $snippets = new Layout('details', ['class' => 'pb-settings-snippets']);
-        $snippets->html(<<<'HTML'
-<summary class="btn btn-xs">插入代码速查 <i class="i-caret-down" aria-hidden="true"></i></summary>
-<div class="pb-snippets-body">
-    <ul class="typecho-option">
-        <li>
-            <label class="typecho-label">收藏列表</label>
-            <div class="pb-snippet-controls">
-                <label>内容类型 <select id="pb-snippet-category"><option value="anime">动画</option><option value="real">三次元</option><option value="book">书籍</option><option value="game">游戏</option><option value="music">音乐</option></select></label>
-                <label>收藏状态 <select id="pb-snippet-status"></select></label>
-            </div>
-            <div class="pb-snippet-output"><input id="pb-collection-code" class="text" type="text" readonly><button class="btn" type="button" data-copy-target="pb-collection-code">复制</button></div>
-        </li>
-    </ul>
-    <ul class="typecho-option">
-        <li>
-            <label class="typecho-label">追番日历</label>
-            <div class="pb-snippet-controls">
-                <label>展示范围 <select id="pb-calendar-filter"><option value="watching">仅在看</option><option value="all">全部番剧</option></select></label>
-            </div>
-            <div class="pb-snippet-output"><input id="pb-calendar-code" class="text" type="text" readonly><button class="btn" type="button" data-copy-target="pb-calendar-code">复制</button></div>
-        </li>
-    </ul>
-    <ul class="typecho-option">
-        <li>
-            <label class="typecho-label" for="pb-subject-id">Bangumi 条目卡片</label>
-            <div class="pb-subject-controls"><input id="pb-subject-id" class="text" type="text" inputmode="numeric" placeholder="subject id"><div class="pb-snippet-output"><input id="pb-card-code" class="text" type="text" readonly><button class="btn" type="button" data-copy-target="pb-card-code">复制</button></div></div>
-            <p class="description pb-copy-status" aria-live="polite"></p>
-        </li>
-    </ul>
-</div>
-HTML);
-        $form->addItem($snippets);
 
         $ID = new Text('ID', null, '', _t('用户 ID'), _t('Bangumi 主页地址中 /user/ 后面的用户名或数字 ID。'));
         $ID->addRule('required', _t('请填写 Bangumi 用户 ID。'));
@@ -214,7 +178,15 @@ HTML);
     }
 
     /**
-     * 输出文章编辑器的条目卡片插入工具
+     * 把 PageDown 编辑器实例挂到 #text 上，插入走它的撤销与预览，不暴露全局变量
+     */
+    public static function editorBridge(): void
+    {
+        echo "document.getElementById('text').pandaBangumiEditor = editor;";
+    }
+
+    /**
+     * 输出文章与独立页面编辑器的 Bangumi 插入工具
      */
     public static function editor(): void
     {
