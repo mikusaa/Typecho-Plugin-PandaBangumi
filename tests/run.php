@@ -673,6 +673,13 @@ namespace {
             assertSameValue(false, $service->isPublicIp('127.0.0.1'));
             assertSameValue(false, $service->isPublicIp('192.168.1.1'));
             assertSameValue(false, $service->isPublicIp('::1'));
+            assertSameValue(false, $service->isPublicIp('::ffff:127.0.0.1'));
+            assertSameValue(false, $service->isPublicIp('64:ff9b::a00:1'));
+            assertSameValue(false, $service->isPublicIp('100.64.0.1'));
+            assertSameValue(false, $service->isPublicIp('169.254.169.254'));
+            assertTrueValue($service->isPublicIp('64:ff9b::101:101'));
+            assertTrueValue($service->isPublicIp('100.128.0.1'));
+            assertTrueValue($service->isPublicIp('2606:4700:4700::1111'));
         } finally {
             removeTestDirectory($directory);
         }
@@ -755,6 +762,21 @@ namespace {
             assertSameValue(200, $response['status']);
             assertSameValue('image/png', $response['mime']);
             assertSameValue(404, $service->getCalendarCover(101, '0000000000000000')['status']);
+        } finally {
+            removeTestDirectory($directory);
+        }
+    });
+
+    $test('Cache files escape PHP tags in upstream text', static function (): void {
+        $directory = testDirectory();
+        try {
+            $cacheStore = new CacheStore($directory);
+            $file = $cacheStore->subjectPath(1);
+            $data = array('summary' => '<?php echo 1; ?> <script>');
+            assertTrueValue($cacheStore->write($file, $data));
+            $body = substr((string)file_get_contents($file), strlen(CacheStore::PHP_PREFIX));
+            assertSameValue(false, str_contains($body, '<'));
+            assertSameValue($data, $cacheStore->read($file));
         } finally {
             removeTestDirectory($directory);
         }
@@ -1031,6 +1053,44 @@ namespace {
             }
 
             $service->cleanup($calendar, $paths[3]);
+            assertTrueValue(is_file($paths[1]));
+            assertSameValue(false, is_file($paths[2]));
+            assertTrueValue(is_file($paths[3]));
+        } finally {
+            removeTestDirectory($directory);
+        }
+    });
+
+    $test('Cover download quota skips pruning under limit and protects cached references', static function (): void {
+        $directory = testDirectory();
+        try {
+            $cacheStore = new CacheStore($directory, static fn(): int => 10000);
+            $service = coverService(config(array('ImageMode' => 'cache')), $cacheStore, null, 2, 1000);
+            $paths = array();
+            $sources = array();
+            for ($id = 1; $id <= 3; $id++) {
+                $sources[$id] = 'https://example.com/' . $id . '.jpg';
+                $descriptor = $service->describeSource($sources[$id]);
+                $paths[$id] = $cacheStore->directory('covers') . '/' . $id . '-' . $descriptor['version'] . '.jpg';
+            }
+
+            foreach (array(1, 2) as $id) {
+                file_put_contents($paths[$id], 'cover');
+                touch($paths[$id], 1000 + $id);
+            }
+            $service->enforceQuota($paths[2]);
+            assertTrueValue(is_file($paths[1]) && is_file($paths[2]));
+
+            $cacheStore->write($cacheStore->dataPath('calendar.php'), array(
+                'time' => 10000,
+                'data' => array(array('items' => array(array(
+                    'id' => 1,
+                    'images' => array('large' => $sources[1])
+                ))))
+            ));
+            file_put_contents($paths[3], 'cover');
+            touch($paths[3], 1003);
+            $service->enforceQuota($paths[3]);
             assertTrueValue(is_file($paths[1]));
             assertSameValue(false, is_file($paths[2]));
             assertTrueValue(is_file($paths[3]));

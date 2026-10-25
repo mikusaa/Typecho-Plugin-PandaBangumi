@@ -122,11 +122,29 @@ final class CoverService
 
     public function isPublicIp(string $ip): bool
     {
-        return filter_var(
-            $ip,
-            FILTER_VALIDATE_IP,
-            FILTER_FLAG_NO_PRIV_RANGE | FILTER_FLAG_NO_RES_RANGE
-        ) !== false;
+        if (filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_NO_PRIV_RANGE | FILTER_FLAG_NO_RES_RANGE) === false) {
+            return false;
+        }
+        $packed = @inet_pton($ip);
+        if ($packed === false) {
+            return false;
+        }
+
+        if (strlen($packed) === 16) {
+            // IPv4 映射（::ffff:0:0/96）与 NAT64（64:ff9b::/96）地址按内嵌的 IPv4 判断
+            $prefix = substr($packed, 0, 12);
+            if (
+                $prefix === str_repeat("\0", 10) . "\xff\xff"
+                || $prefix === "\x00\x64\xff\x9b" . str_repeat("\0", 8)
+            ) {
+                $embedded = inet_ntop(substr($packed, 12));
+                return $embedded !== false && $this->isPublicIp($embedded);
+            }
+            return true;
+        }
+
+        // 运营商级 NAT（100.64.0.0/10）不在 PHP 的保留地址范围内
+        return !(ord($packed[0]) === 100 && (ord($packed[1]) & 0xC0) === 64);
     }
 
     private function resolveFetchTarget(string $fetchUrl): ?array
@@ -579,6 +597,11 @@ final class CoverService
         return $files;
     }
 
+    private function withinQuota(int $count, int $bytes): bool
+    {
+        return $count <= max(0, $this->maxCacheEntries) && $bytes <= max(0, $this->maxCacheBytes);
+    }
+
     private function pruneQuota(array $files): void
     {
         $count = count($files);
@@ -587,7 +610,7 @@ final class CoverService
             if ($file['protected']) {
                 continue;
             }
-            if ($count <= max(0, $this->maxCacheEntries) && $bytes <= max(0, $this->maxCacheBytes)) {
+            if ($this->withinQuota($count, $bytes)) {
                 break;
             }
             if (@unlink($file['path'])) {
@@ -596,7 +619,7 @@ final class CoverService
             }
         }
 
-        if ($count > max(0, $this->maxCacheEntries) || $bytes > max(0, $this->maxCacheBytes)) {
+        if (!$this->withinQuota($count, $bytes)) {
             error_log(
                 'PandaBangumi protected cover cache exceeds quota: '
                 . $count . ' files, ' . $bytes . ' bytes'
@@ -606,8 +629,18 @@ final class CoverService
 
     public function enforceQuota(string $currentFile = ''): void
     {
+        // 未超额时不必读取全部数据缓存来判断封面引用
+        $files = $this->coverFiles(array(), false);
+        if ($this->withinQuota(count($files), array_sum(array_column($files, 'size')))) {
+            return;
+        }
+
         $referenced = $this->referencedCovers(array(), $currentFile);
-        $this->pruneQuota($this->coverFiles($referenced, false));
+        foreach ($files as &$file) {
+            $file['protected'] = isset($referenced[$file['name']]);
+        }
+        unset($file);
+        $this->pruneQuota($files);
     }
 
     public function maybeRunMaintenance(

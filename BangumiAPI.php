@@ -155,11 +155,6 @@ class BangumiAPI
         return $initialized;
     }
 
-    public static function buildApiUrl(string $path): string
-    {
-        return self::config()->buildApiUrl($path);
-    }
-
     public static function encodeJson(mixed $data): string
     {
         $json = json_encode($data, JSON_UNESCAPED_UNICODE);
@@ -174,11 +169,6 @@ class BangumiAPI
             }
         }
         return false;
-    }
-
-    public static function curlFileGetContents(string $url): bool|string
-    {
-        return self::httpClient()->get($url);
     }
 
     public static function getCalendarCover(int $subjectId, string $version): array

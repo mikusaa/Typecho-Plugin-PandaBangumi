@@ -108,7 +108,8 @@ final class CacheStore
 
     public function write(string $filePath, array $cache): bool
     {
-        $json = json_encode($cache, JSON_UNESCAPED_UNICODE);
+        // 转义尖括号，避免上游文本中的 <?php 在守卫前缀之后被当作 PHP 解析
+        $json = json_encode($cache, JSON_UNESCAPED_UNICODE | JSON_HEX_TAG);
         if ($json === false) {
             return false;
         }
