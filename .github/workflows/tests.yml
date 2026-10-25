@@ -39,4 +39,7 @@ jobs:
       - name: Syntax check
         run: for file in assets/js/*.js; do node --check "$file"; done
       - name: Run tests
-        run: node tests/subject-card.js
+        run: |
+          node tests/subject-card.js
+          node tests/editor-insert.js
+          node tests/admin-settings.js

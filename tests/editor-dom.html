@@ -1,0 +1,144 @@
+<!doctype html>
+<html lang="zh-CN">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>PandaBangumi editor DOM regression</title>
+<link rel="stylesheet" href="../assets/css/PandaBangumiEditor.css">
+<style>body{font:14px system-ui;margin:20px}textarea{display:block;width:90%;height:100px;background:white}#wmd-button-row{display:flex;list-style:none;padding:0}#result{white-space:pre-wrap}</style>
+<form><input id="outside" aria-label="Outside field"><textarea id="text" aria-label="Content">before10440after</textarea></form>
+<pre id="result">Running…</pre>
+<script src="../assets/js/PandaBangumiEditor.js" data-pb-editor-icon="../assets/images/bangumi-editor.gif"></script>
+<script>
+(async function () {
+    const output = document.querySelector('#result');
+    // The observer re-checks on the next animation frame.
+    const tick = () => new Promise(resolve => requestAnimationFrame(() => setTimeout(resolve, 20)));
+    let checks = 0;
+    function assert(value, message) { if (!value) throw new Error(message); checks++; }
+    function click(selector) { document.querySelector(selector).click(); }
+    const input = value => {
+        const field = document.querySelector('#pb-editor-subject-id');
+        field.value = value;
+        field.dispatchEvent(new Event('input', { bubbles: true }));
+    };
+    const change = (name, value) => {
+        const field = document.querySelector('[name="pb-' + name + '"][value="' + value + '"]');
+        field.checked = true;
+        field.dispatchEvent(new Event('change', { bubbles: true }));
+    };
+    const key = (target, name) => target.dispatchEvent(new KeyboardEvent('keydown', { key: name, bubbles: true }));
+    let textarea = document.querySelector('#text');
+    let operations = 0;
+    textarea.pandaBangumiEditor = { textOperation(edit) { operations++; edit(); } };
+    const open = () => click('#wmd-pandabangumi-card-button > button');
+    const tab = name => click('[data-pb-tab="' + name + '"]');
+    const panel = () => document.querySelector('#pb-editor-insert-panel');
+    const selectedTab = () => panel().querySelector('[aria-selected="true"]').dataset.pbTab;
+    const code = () => panel().querySelector('.pb-editor-code code').textContent;
+    const copy = () => panel().querySelector('[data-pb-action="copy"]');
+    try {
+        await tick();
+        assert(!document.querySelector('#wmd-pandabangumi-card-button'), 'No toolbar must quietly wait');
+        const toolbar = document.createElement('ul');
+        toolbar.id = 'wmd-button-row';
+        document.body.insertBefore(toolbar, document.querySelector('form'));
+        await tick();
+        assert(panel().hidden, 'Initially closed');
+        for (let i = 0; i < 3; i++) window.pandaBangumiInsertMenu.initialize();
+        const script = document.createElement('script');
+        script.src = '../assets/js/PandaBangumiEditor.js';
+        await new Promise((resolve, reject) => { script.onload = resolve; script.onerror = reject; document.body.append(script); });
+        assert(document.querySelectorAll('#wmd-pandabangumi-card-button').length === 1, 'Repeated initialization: one button');
+        assert(toolbar.querySelectorAll('.wmd-spacer').length === 1, 'One spacer');
+        assert(document.querySelectorAll('#pb-editor-insert-panel').length === 1, 'One panel');
+
+        textarea.focus(); textarea.setSelectionRange(6, 11, 'backward'); open();
+        assert([...panel().querySelectorAll('[role="tab"]')].map(e => e.dataset.pbTab).join() === 'card,collection,calendar', 'Three ordered tabs');
+        assert(selectedTab() === 'card' && document.activeElement.id === 'pb-editor-subject-id', 'Opens on card tab with field focused');
+        assert(document.querySelector('#pb-editor-subject-id').value === '10440', 'Valid selection prefill');
+        assert(code() === '<div class="bgm-card" data-id="10440"></div>' && !copy().disabled, 'Preview shows card code');
+        const width = panel().style.width;
+        tab('collection'); assert(panel().style.width === width, 'Switching tabs keeps panel width');
+        tab('card');
+        input('12garbage');
+        assert(copy().disabled && !panel().querySelector('.pb-editor-code-ready'), 'Invalid draft disables copy');
+        click('[data-pb-action="insert"]');
+        assert(textarea.value === 'before10440after' && !panel().hidden, 'Invalid input preserves text and panel');
+        assert(document.querySelector('[aria-invalid="true"]'), 'Invalid field marked');
+        input('bgm.tv/subject/42');
+        assert(!document.querySelector('[aria-invalid="true"]'), 'Editing clears error');
+        assert(code() === '<div class="bgm-card" data-id="42"></div>', 'Preview follows input');
+        tab('calendar'); tab('card');
+        assert(document.querySelector('#pb-editor-subject-id').value === 'bgm.tv/subject/42', 'Switching tabs preserves card draft');
+        key(document.querySelector('#pb-editor-subject-id'), 'Enter');
+        assert(textarea.value === 'before\n\n<div class="bgm-card" data-id="42"></div>\n\nafter', 'Enter replaces original selection');
+        assert(operations === 1 && textarea.selectionStart === textarea.value.indexOf('after'), 'One edit and cursor after block');
+        open();
+        assert(selectedTab() === 'card' && document.querySelector('#pb-editor-subject-id').value === '', 'Successful card clears ID');
+        key(panel(), 'Escape');
+        assert(panel().hidden && document.activeElement === textarea, 'Escape restores editor focus');
+
+        open(); tab('collection');
+        change('status', 'completed'); change('category', 'book');
+        assert(document.querySelector('[name="pb-status"]:checked').nextElementSibling.textContent === '读过', 'Completed semantics for books');
+        assert(code() === '<div data-type="read" data-cate="book" class="bgm-collection"></div>', 'Preview follows collection');
+        change('category', 'game');
+        assert(document.querySelector('[name="pb-status"]:checked').nextElementSibling.textContent === '玩过', 'Completed semantics for games');
+        click('[data-pb-action="cancel"]'); open();
+        assert(selectedTab() === 'collection', 'Reopening remembers last tab');
+        assert(document.activeElement === document.querySelector('[name="pb-category"]:checked'), 'Focus on checked choice');
+        assert(document.querySelector('[name="pb-category"]:checked').value === 'game' && document.querySelector('[name="pb-status"]:checked').value === 'completed', 'Session remembers collection');
+        const tabs = [...panel().querySelectorAll('[role="tab"]')];
+        key(tabs[1], 'ArrowRight');
+        assert(selectedTab() === 'calendar' && document.activeElement === tabs[2] && tabs[1].tabIndex === -1, 'Arrow keys move between tabs');
+        key(tabs[2], 'ArrowRight');
+        assert(selectedTab() === 'card', 'Arrow keys wrap around');
+        key(document.activeElement, 'ArrowLeft');
+        assert(selectedTab() === 'calendar', 'ArrowLeft wraps back');
+        assert(document.querySelector('[name="pb-calendar"]:checked').value === 'watching', 'Calendar default');
+        assert(code() === '<div data-filter="watching" class="bgm-calendar"></div>', 'Watching calendar keeps filter');
+        change('calendar', 'all'); click('[data-pb-action="insert"]');
+        assert(textarea.value.includes('<div class="bgm-calendar"></div>'), 'All calendar omits filter');
+        open();
+        assert(selectedTab() === 'calendar' && document.querySelector('[name="pb-calendar"]:checked').value === 'all', 'Session remembers calendar');
+        key(document.querySelector('[name="pb-calendar"]:checked'), 'Enter');
+        assert(panel().hidden && textarea.value.split('<div class="bgm-calendar"></div>').length === 3, 'Enter on a choice inserts');
+
+        document.querySelector('#outside').focus(); open();
+        document.querySelector('#outside').focus();
+        assert(panel().hidden && document.activeElement.id === 'outside', 'Focus leaving closes without stealing focus');
+        textarea.setSelectionRange(0, 6, 'backward'); open();
+        assert(selectedTab() === 'calendar', 'Ordinary prose keeps last tab');
+        tab('card');
+        assert(document.querySelector('#pb-editor-subject-id').value === '', 'Ordinary prose is not prefilled');
+        click('[data-pb-action="cancel"]');
+        assert(textarea.selectionStart === 0 && textarea.selectionEnd === 6 && textarea.selectionDirection === 'backward', 'Cancel restores original range/direction');
+        open(); open(); assert(panel().hidden, 'Trigger toggles closed');
+        open();
+        document.querySelector('#outside').dispatchEvent(new Event('pointerdown', { bubbles: true }));
+        assert(panel().hidden, 'Outside pointer closes');
+
+        const before = textarea.value;
+        open(); toolbar.remove(); await tick();
+        assert(!panel() && !document.querySelector('#wmd-pandabangumi-card-button'), 'Removing toolbar cleans panel');
+        const newToolbar = document.createElement('ul'); newToolbar.id = 'wmd-button-row';
+        document.body.insertBefore(newToolbar, document.querySelector('form')); await tick();
+        assert(document.querySelectorAll('#wmd-pandabangumi-card-button').length === 1, 'Rebuilt toolbar reinjects once');
+        const replacement = textarea.cloneNode(true); textarea.replaceWith(replacement); textarea = replacement; await tick();
+        assert(document.querySelectorAll('#pb-editor-insert-panel').length === 1 && textarea.value === before, 'Replaced editor cleans old references');
+        open(); document.querySelector('#outside').focus();
+        assert(panel().hidden, 'New editor listeners work');
+        textarea.style.backgroundColor = '#202428'; open();
+        assert(panel().dataset.pbTheme === 'dark', 'Dark editor selects dark panel');
+        open(); textarea.style.backgroundColor = '#ffffff'; open();
+        assert(panel().dataset.pbTheme === 'light', 'Light editor overrides system dark preference');
+        open();
+        output.textContent = 'PASS: ' + checks + ' DOM behavior assertions.\nThis fixture does not validate real PageDown undo; verify that on a Typecho editor.';
+        document.title = 'PASS: PandaBangumi editor DOM';
+    } catch (error) {
+        output.textContent = 'FAIL after ' + checks + ': ' + error.stack;
+        document.title = 'FAIL: PandaBangumi editor DOM';
+    }
+})();
+</script>
+</html>
