@@ -688,20 +688,10 @@ function createCalendarControls(todayId) {
         const tabButton = document.createElement('button');
         tabButton.className = 'cal-tab-button';
         tabButton.type = 'button';
+        tabButton.textContent = day.shortName;
         tabButton.title = day.fullName;
         tabButton.setAttribute('aria-label', day.fullName);
         tabButton.dataset.dayId = String(day.id);
-
-        const tabDay = document.createElement('span');
-        tabDay.className = 'cal-tab-button__day';
-        tabDay.textContent = day.shortName;
-        tabButton.appendChild(tabDay);
-
-        const tabCount = document.createElement('span');
-        tabCount.className = 'cal-tab-button__count';
-        tabCount.setAttribute('aria-hidden', 'true');
-        tabButton.appendChild(tabCount);
-
         if (day.id === currentDayId) {
             tabButton.classList.add('active', 'is-today');
             tabButton.setAttribute('aria-current', 'date');
@@ -715,12 +705,11 @@ function createCalendarControls(todayId) {
     });
 
     const formatDayCount = count => (count > 0 ? `${String(count)} 部` : '暂无');
-    const updateTabCounts = () => {
+    const updateTabStates = () => {
         tabButtons.forEach((tabButton, index) => {
             const day = weekdays[index];
             const hasCount = dayCounts.has(day.id);
             const count = dayCounts.get(day.id) || 0;
-            tabButton.children[1].textContent = count > 0 ? String(count) : '';
             tabButton.classList.toggle('is-empty', hasCount && count === 0);
             tabButton.setAttribute('aria-label', hasCount
                 ? `${day.fullName}，${formatDayCount(count)}`
@@ -767,9 +756,8 @@ function createCalendarControls(todayId) {
         setWeekPickerExpanded(weekPicker, !weekPicker.classList.contains('is-expanded'));
     });
     tabs.addEventListener('click', event => {
-        const tabButton = event.target.closest('.cal-tab-button');
-        if (!tabButton) return;
-        activateTab(tabButton);
+        if (!event.target.matches('.cal-tab-button')) return;
+        activateTab(event.target);
         setWeekPickerExpanded(weekPicker, false);
         if (window.matchMedia('(max-width: 480px)').matches) {
             weekTrigger.focus({ preventScroll: true });
@@ -792,7 +780,7 @@ function createCalendarControls(todayId) {
                 dayCounts.set(Number(panel.dataset.dayId), panel.querySelectorAll('.bgm-poster-card').length);
             });
             syncActivePanel();
-            updateTabCounts();
+            updateTabStates();
             updateWeekTrigger(activeTab);
         }
     };

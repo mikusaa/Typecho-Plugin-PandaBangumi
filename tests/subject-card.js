@@ -139,9 +139,8 @@ assert.equal(calendarTrigger.children[0].textContent, '周二');
 assert.equal(calendarTrigger.children[1].textContent, '');
 assert.equal(calendarControls.tabs.className, 'cal-tabs');
 assert.equal(calendarControls.tabs.children.length, 7);
-assert.equal(calendarControls.tabs.children[0].children[0].textContent, '周一');
-assert.equal(calendarControls.tabs.children[1].children[0].textContent, '周二');
-assert.equal(calendarControls.tabs.children[1].children[1].textContent, '');
+assert.equal(calendarControls.tabs.children[0].textContent, '周一');
+assert.equal(calendarControls.tabs.children[1].textContent, '周二');
 assert.equal(calendarControls.tabs.children[1].classList.contains('active'), true);
 assert.equal(calendarControls.tabs.children[1].attributes['aria-current'], 'date');
 
@@ -153,8 +152,7 @@ const fakeCalendarPanels = counts => ({
     }))
 });
 calendarControls.setPanels(fakeCalendarPanels([3, 1, 0, 0, 12, 0, 2]));
-assert.equal(calendarControls.tabs.children[0].children[1].textContent, '3');
-assert.equal(calendarControls.tabs.children[2].children[1].textContent, '');
+assert.equal(calendarControls.tabs.children[0].textContent, '周一');
 assert.equal(calendarControls.tabs.children[2].classList.contains('is-empty'), true);
 assert.equal(calendarControls.tabs.children[4].classList.contains('is-empty'), false);
 assert.equal(calendarControls.tabs.children[4].attributes['aria-label'], '星期五，12 部');

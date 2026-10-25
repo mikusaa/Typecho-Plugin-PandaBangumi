@@ -385,10 +385,11 @@
     margin: 30px auto;
 }
 
+/* 主题自带分区标题，星期切换作为控件靠右 */
 .bgm-calendar-header {
     display: flex;
     align-items: center;
-    justify-content: space-between;
+    justify-content: flex-end;
     gap: 1rem;
     margin-bottom: 1rem;
 }
@@ -447,16 +448,11 @@
     font-weight: 600;
 }
 
-.cal-tab-button__day {
-    position: relative;
-    display: inline-block;
-}
-
-/* 今天用强调色圆点标记，不再改变文字颜色；圆点对齐星期文字而非整颗按钮 */
-.cal-tab-button.is-today .cal-tab-button__day::after {
+/* 今天用强调色圆点标记，不再改变文字颜色 */
+.cal-tab-button.is-today::after {
     content: '';
     position: absolute;
-    bottom: calc(3px - 0.4rem);
+    bottom: 3px;
     left: 50%;
     width: 4px;
     height: 4px;
@@ -468,17 +464,6 @@
 .cal-tab-button:focus-visible {
     outline: 2px solid var(--pb-subject-accent);
     outline-offset: 1px;
-}
-
-.cal-tab-button__count {
-    margin-left: 0.3em;
-    font-size: 0.72em;
-    font-variant-numeric: tabular-nums;
-    opacity: 0.6;
-}
-
-.cal-tab-button__count:empty {
-    display: none;
 }
 
 /* 没有番剧的日子仍可点击，只是淡化 */
@@ -630,28 +615,10 @@
         transition-delay: 0s;
     }
 
-    /* 七列较窄，部数放到星期下方 */
     .cal-tab-button {
-        display: flex;
         min-width: 0;
-        flex-direction: column;
-        align-items: center;
         padding: 0.48rem 0.05rem;
         font-size: 0.78rem;
-    }
-
-    .cal-tab-button__count {
-        margin-left: 0;
-        line-height: 1.2;
-    }
-
-    /* 部数占了星期下方，今天的圆点改为贴按钮底边 */
-    .cal-tab-button__day {
-        position: static;
-    }
-
-    .cal-tab-button.is-today .cal-tab-button__day::after {
-        bottom: 3px;
     }
 }
 
